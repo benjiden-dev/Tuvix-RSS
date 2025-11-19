@@ -34,16 +34,14 @@ bucket_name = "tuvix-storage"
 # We use a high limit and enforce user-specific limits in code
 # First, create namespaces: wrangler rate-limit namespace create "API_RATE_LIMIT" and "FEED_RATE_LIMIT"
 [[ratelimits]]
-binding = "API_RATE_LIMIT"
+name = "API_RATE_LIMIT"
 namespace_id = "" # Add your namespace ID after creating: wrangler rate-limit namespace create "API_RATE_LIMIT"
-limit = 10000  # High limit - actual limits enforced per user via getUserLimits()
-period = 60    # 60 seconds (1 minute)
+simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user via getUserLimits()
 
 [[ratelimits]]
-binding = "FEED_RATE_LIMIT"
+name = "FEED_RATE_LIMIT"
 namespace_id = "" # Add your namespace ID after creating: wrangler rate-limit namespace create "FEED_RATE_LIMIT"
-limit = 10000  # High limit - actual limits enforced per user via getUserLimits()
-period = 60    # 60 seconds (1 minute)
+simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user via getUserLimits()
 
 # Environment variables
 [vars]
