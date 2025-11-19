@@ -1,0 +1,561 @@
+/**
+ * RSS Fetcher Service
+ *
+ * Fetches RSS/Atom/RDF/JSON feeds using feedsmith and stores articles in the database.
+ * Supports automatic format detection and handles multiple feed formats.
+ */
+
+import { parseFeed } from "feedsmith";
+import type { Rss, Atom, Rdf, Json } from "@/types/feed";
+import type { Database } from "../db/client";
+import * as schema from "../db/schema";
+import { eq } from "drizzle-orm";
+import { extractOgImage } from "@/utils/og-image-fetcher";
+import { stripHtml, truncateText } from "@/utils/text-sanitizer";
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export interface FetchResult {
+  successCount: number;
+  errorCount: number;
+  total: number;
+  errors: Array<{ sourceId: number; url: string; error: string }>;
+}
+
+export interface FetchSingleResult {
+  articlesAdded: number;
+  articlesSkipped: number;
+  sourceUpdated: boolean;
+}
+
+// Union types for feeds and items (feedsmith returns dates as strings, not Date objects)
+type AnyFeed =
+  | Rss.Feed<string>
+  | Atom.Feed<string>
+  | Rdf.Feed<string>
+  | Json.Feed<string>;
+type AnyItem =
+  | Rss.Item<string>
+  | Atom.Entry<string>
+  | Rdf.Item<string>
+  | Json.Item<string>;
+
+// =============================================================================
+// Public API
+// =============================================================================
+
+/**
+ * Fetch all feeds from the database and update articles
+ */
+export async function fetchAllFeeds(db: Database): Promise<FetchResult> {
+  const sources = await db.select().from(schema.sources);
+
+  let successCount = 0;
+  let errorCount = 0;
+  const errors: Array<{ sourceId: number; url: string; error: string }> = [];
+
+  console.log(`Starting fetch for ${sources.length} sources`);
+
+  for (const source of sources) {
+    try {
+      const result = await fetchSingleFeed(source.id, source.url, db);
+      console.log(
+        `✓ Fetched ${source.url}: ${result.articlesAdded} new, ${result.articlesSkipped} skipped`,
+      );
+      successCount++;
+    } catch (error) {
+      errorCount++;
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      errors.push({
+        sourceId: source.id,
+        url: source.url,
+        error: errorMessage,
+      });
+      console.error(`✗ Failed to fetch ${source.url}:`, errorMessage);
+    }
+  }
+
+  console.log(
+    `Fetch complete: ${successCount} succeeded, ${errorCount} failed out of ${sources.length}`,
+  );
+
+  return {
+    successCount,
+    errorCount,
+    total: sources.length,
+    errors,
+  };
+}
+
+/**
+ * Fetch a single feed and store new articles
+ */
+export async function fetchSingleFeed(
+  sourceId: number,
+  feedUrl: string,
+  db: Database,
+): Promise<FetchSingleResult> {
+  // 1. Fetch feed with timeout
+  const response = await fetch(feedUrl, {
+    headers: {
+      "User-Agent":
+        "TuvixRSS/1.0 (RSS Reader; +https://github.com/techsquidtv/tuvix)",
+      Accept:
+        "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+    },
+    signal: AbortSignal.timeout(30000), // 30s timeout
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  if (
+    !contentType.includes("xml") &&
+    !contentType.includes("rss") &&
+    !contentType.includes("atom") &&
+    !contentType.includes("json")
+  ) {
+    console.warn(`Unexpected content-type: ${contentType} for ${feedUrl}`);
+  }
+
+  const feedContent = await response.text();
+
+  // 2. Parse feed using feedsmith (auto-detects format)
+  let feed: AnyFeed;
+  let feedFormat: string;
+  try {
+    const result = parseFeed(feedContent);
+    feed = result.feed as AnyFeed;
+    feedFormat = result.format;
+    console.log(`Parsed ${feedUrl} as ${feedFormat}`);
+  } catch (error) {
+    throw new Error(
+      `Failed to parse feed: ${error instanceof Error ? error.message : "Unknown"}`,
+    );
+  }
+
+  // 3. Update source metadata
+  const sourceUpdated = await updateSourceMetadata(sourceId, feed, db);
+
+  // 4. Extract and store articles
+  const { articlesAdded, articlesSkipped } = await storeArticles(
+    sourceId,
+    feed,
+    db,
+  );
+
+  return {
+    articlesAdded,
+    articlesSkipped,
+    sourceUpdated,
+  };
+}
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+/**
+ * Update source metadata from feed
+ */
+async function updateSourceMetadata(
+  sourceId: number,
+  feed: AnyFeed,
+  db: Database,
+): Promise<boolean> {
+  const updates: Partial<typeof schema.sources.$inferInsert> = {
+    lastFetched: new Date(),
+  };
+
+  // Extract metadata (handle different feed formats)
+  if ("title" in feed && feed.title) {
+    updates.title = typeof feed.title === "string" ? feed.title : feed.title;
+  }
+
+  if ("description" in feed && feed.description) {
+    updates.description = feed.description;
+  } else if ("subtitle" in feed && feed.subtitle) {
+    // Atom uses subtitle instead of description
+    updates.description = feed.subtitle;
+  }
+
+  if ("link" in feed && feed.link) {
+    updates.siteUrl = feed.link;
+  } else if (
+    "links" in feed &&
+    Array.isArray(feed.links) &&
+    feed.links[0]?.href
+  ) {
+    // Atom uses links array
+    updates.siteUrl = feed.links[0].href;
+  }
+
+  // Only update if we have something to update (beyond lastFetched)
+  if (Object.keys(updates).length > 1) {
+    await db
+      .update(schema.sources)
+      .set(updates)
+      .where(eq(schema.sources.id, sourceId));
+    return true;
+  }
+
+  // Just update lastFetched
+  await db
+    .update(schema.sources)
+    .set({ lastFetched: new Date() })
+    .where(eq(schema.sources.id, sourceId));
+  return false;
+}
+
+/**
+ * Store articles from feed
+ */
+async function storeArticles(
+  sourceId: number,
+  feed: AnyFeed,
+  db: Database,
+): Promise<{ articlesAdded: number; articlesSkipped: number }> {
+  // Extract items/entries from feed
+  const items = extractFeedItems(feed);
+
+  if (!items || items.length === 0) {
+    console.warn(`No items found in feed for source ${sourceId}`);
+    return { articlesAdded: 0, articlesSkipped: 0 };
+  }
+
+  let articlesAdded = 0;
+  let articlesSkipped = 0;
+
+  for (const item of items) {
+    try {
+      // Generate GUID (required for deduplication)
+      const guid = extractGuid(item, sourceId);
+
+      if (!guid) {
+        console.warn("Skipping item without guid:", item.title || "Untitled");
+        articlesSkipped++;
+        continue;
+      }
+
+      // Check if article already exists
+      const existing = await db
+        .select()
+        .from(schema.articles)
+        .where(eq(schema.articles.guid, guid))
+        .limit(1)
+        .then((rows) => rows[0]);
+
+      if (existing) {
+        articlesSkipped++;
+        continue;
+      }
+
+      // Extract article data
+      const articleData = await extractArticleData(item, sourceId, guid);
+
+      // Insert article
+      await db.insert(schema.articles).values(articleData);
+      articlesAdded++;
+    } catch (error) {
+      console.error("Failed to store article:", error);
+      // Continue with next article
+    }
+  }
+
+  return { articlesAdded, articlesSkipped };
+}
+
+/**
+ * Extract items/entries from feed (handles different formats)
+ */
+function extractFeedItems(feed: AnyFeed): AnyItem[] {
+  // RSS/RDF use 'items'
+  if ("items" in feed && Array.isArray(feed.items)) {
+    return feed.items;
+  }
+
+  // Atom uses 'entries'
+  if ("entries" in feed && Array.isArray(feed.entries)) {
+    return feed.entries;
+  }
+
+  return [];
+}
+
+/**
+ * Extract GUID from feed item
+ */
+function extractGuid(item: AnyItem, sourceId: number): string | null {
+  // RSS guid
+  if ("guid" in item && item.guid) {
+    return typeof item.guid === "string" ? item.guid : item.guid.value || null;
+  }
+
+  // Atom id
+  if ("id" in item && item.id) {
+    return item.id;
+  }
+
+  // Fallback to link
+  if ("link" in item && item.link) {
+    return item.link;
+  }
+
+  // For Atom entries with links array
+  if ("links" in item && Array.isArray(item.links) && item.links[0]?.href) {
+    return item.links[0].href;
+  }
+
+  // Last resort: generate from title + date
+  if ("title" in item && item.title) {
+    const pubDate = extractPublishedDate(item);
+    if (pubDate) {
+      return `${sourceId}-${item.title}-${pubDate.getTime()}`;
+    }
+    // Without date, use title alone (not ideal but better than nothing)
+    return `${sourceId}-${item.title}`;
+  }
+
+  return null;
+}
+
+/**
+ * Extract published date from feed item
+ * Note: feedsmith returns dates as strings, not Date objects
+ */
+function extractPublishedDate(item: AnyItem): Date | null {
+  // Try different date fields (all are strings from feedsmith parser)
+  const dateFields = [
+    "pubDate",
+    "published",
+    "updated",
+    "date_published",
+    "date_modified",
+  ] as const;
+
+  for (const field of dateFields) {
+    if (field in item) {
+      const value = (item as Record<string, unknown>)[field];
+      if (typeof value === "string") {
+        try {
+          const date = new Date(value);
+          if (!isNaN(date.getTime())) {
+            return date;
+          }
+        } catch {
+          // Invalid date, try next field
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Extract article data from feed item
+ */
+async function extractArticleData(
+  item: AnyItem,
+  sourceId: number,
+  guid: string,
+): Promise<typeof schema.articles.$inferInsert> {
+  // Title
+  const title = ("title" in item && item.title) || "Untitled";
+
+  // Link - handle both RSS/JSON Feed (string) and Atom (links array)
+  let link = "";
+  if ("link" in item && typeof item.link === "string") {
+    link = item.link;
+  } else if ("url" in item && typeof item.url === "string") {
+    // JSON Feed uses 'url'
+    link = item.url;
+  } else if (
+    "links" in item &&
+    Array.isArray(item.links) &&
+    item.links[0]?.href
+  ) {
+    // Atom uses links array
+    link = item.links[0].href;
+  }
+
+  // Content (try different fields)
+  // SECURITY: Strip HTML to prevent XSS and store only plain text
+  let rawContent = "";
+
+  // JSON Feed
+  if ("content_html" in item && typeof item.content_html === "string") {
+    rawContent = item.content_html;
+  } else if ("content_text" in item && typeof item.content_text === "string") {
+    rawContent = item.content_text;
+  }
+  // RSS/Atom content
+  else if ("content" in item) {
+    const itemContent = item.content;
+    if (typeof itemContent === "string") {
+      rawContent = itemContent;
+    } else if (
+      itemContent &&
+      typeof itemContent === "object" &&
+      "value" in itemContent
+    ) {
+      // Atom content object
+      rawContent = String(itemContent.value || "");
+    }
+  }
+  // Content namespace (RSS)
+  else if ("content:encoded" in item) {
+    const encoded = (item as Record<string, unknown>)["content:encoded"];
+    if (typeof encoded === "string") {
+      rawContent = encoded;
+    }
+  }
+
+  // Strip HTML from content and truncate to prevent bloat
+  const content = truncateText(stripHtml(rawContent), 500000); // 500KB max
+
+  // Description (separate from content)
+  // SECURITY: Strip HTML to prevent XSS
+  let rawDescription = "";
+  if ("description" in item && typeof item.description === "string") {
+    rawDescription = item.description;
+  } else if ("summary" in item && typeof item.summary === "string") {
+    rawDescription = item.summary;
+  } else if ("contentSnippet" in item) {
+    const snippet = (item as Record<string, unknown>).contentSnippet;
+    if (typeof snippet === "string") {
+      rawDescription = snippet;
+    }
+  } else if (rawContent) {
+    // Generate description from content
+    rawDescription = rawContent;
+  }
+
+  // Strip HTML and truncate description
+  const description = truncateText(stripHtml(rawDescription), 5000);
+
+  // Author
+  let author: string | undefined = undefined;
+
+  // RSS string author or Atom/JSON Feed author object
+  if ("authors" in item && Array.isArray(item.authors) && item.authors[0]) {
+    const firstAuthor = item.authors[0];
+    author =
+      typeof firstAuthor === "string"
+        ? firstAuthor
+        : firstAuthor.name || undefined;
+  } else if ("author" in item) {
+    const itemAuthor = (item as Record<string, unknown>).author;
+    author =
+      typeof itemAuthor === "string"
+        ? itemAuthor
+        : (itemAuthor as { name?: string })?.name || undefined;
+  } else if ("creator" in item) {
+    const creator = (item as Record<string, unknown>).creator;
+    if (typeof creator === "string") {
+      author = creator;
+    }
+  }
+  // Dublin Core creator
+  else if ("dc" in item) {
+    const dc = (item as Record<string, unknown>).dc as
+      | { creator?: string | string[] }
+      | undefined;
+    if (dc?.creator) {
+      author = Array.isArray(dc.creator) ? dc.creator[0] : dc.creator;
+    }
+  }
+
+  // Image URL
+  let imageUrl: string | undefined = undefined;
+
+  // JSON Feed
+  if ("image" in item && typeof item.image === "string") {
+    imageUrl = item.image;
+  }
+  // RSS enclosure
+  else if ("enclosures" in item && Array.isArray(item.enclosures)) {
+    const imageEnclosure = item.enclosures.find((enc) =>
+      enc.type?.startsWith("image/"),
+    );
+    if (imageEnclosure?.url) {
+      imageUrl = imageEnclosure.url;
+    }
+  }
+  // Media RSS namespace
+  else if ("media" in item) {
+    const media = (item as Record<string, unknown>).media as
+      | {
+          thumbnail?: { url?: string };
+          content?: Array<{ type?: string; url?: string }>;
+        }
+      | undefined;
+
+    if (media?.thumbnail?.url) {
+      imageUrl = media.thumbnail.url;
+    } else if (Array.isArray(media?.content)) {
+      const imageContent = media.content.find((c) =>
+        c.type?.startsWith("image/"),
+      );
+      if (imageContent?.url) {
+        imageUrl = imageContent.url;
+      }
+    }
+  }
+
+  // Final fallback: OpenGraph image from article URL
+  if (!imageUrl && link) {
+    try {
+      const ogImage = await extractOgImage(link);
+      if (ogImage) {
+        imageUrl = ogImage;
+      }
+    } catch (error) {
+      // Silently ignore OG fetch errors
+    }
+  }
+
+  // Published date
+  const publishedAt = extractPublishedDate(item);
+
+  return {
+    sourceId,
+    guid,
+    title: String(title),
+    link,
+    content,
+    description,
+    author,
+    imageUrl,
+    publishedAt,
+  };
+}
+
+/**
+ * Fetch and parse a feed without storing (for preview/discovery)
+ */
+export async function fetchAndParseFeed(feedUrl: string): Promise<AnyFeed> {
+  const response = await fetch(feedUrl, {
+    headers: {
+      "User-Agent":
+        "TuvixRSS/1.0 (RSS Reader; +https://github.com/techsquidtv/tuvix)",
+      Accept:
+        "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+    },
+    signal: AbortSignal.timeout(30000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+
+  const feedContent = await response.text();
+  const { feed } = parseFeed(feedContent);
+
+  return feed as AnyFeed;
+}

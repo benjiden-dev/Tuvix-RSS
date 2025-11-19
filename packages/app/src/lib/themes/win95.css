@@ -1,0 +1,249 @@
+/* Windows 95 theme - 3D beveled UI effects */
+/* Define Win95 border colors as CSS variables for reuse */
+.win95 {
+  --win95-border-outset: #dfdfdf #808080 #808080 #dfdfdf; /* Light top/left, dark bottom/right */
+  --win95-border-inset: #808080 #dfdfdf #dfdfdf #808080; /* Dark top/left, light bottom/right */
+  --win95-border-primary-outset: #000080 #0000ff #0000ff #000080; /* Blue outset */
+  --win95-border-primary-inset: #0000ff #000080 #000080 #0000ff; /* Blue inset */
+}
+
+/* Win95 buttons - raised appearance with outset borders */
+.win95 [data-slot="button"],
+.win95 [data-slot="alert-dialog-action"],
+.win95 [data-slot="alert-dialog-cancel"] {
+  border-style: outset !important;
+  border-width: 2px !important;
+  border-color: var(--win95-border-outset) !important;
+  box-shadow: none !important;
+  background-color: var(
+    --card
+  ) !important; /* Use grey (card color) instead of background */
+}
+
+/* Win95 buttons - pressed state with inset borders */
+.win95 [data-slot="button"]:active,
+.win95 [data-slot="alert-dialog-action"]:active,
+.win95 [data-slot="alert-dialog-cancel"]:active {
+  border-style: inset !important;
+  border-color: var(--win95-border-inset) !important;
+}
+
+/* Win95 primary buttons - blue background with white text */
+.win95 [data-slot="button"][class*="bg-primary"] {
+  background-color: var(--primary) !important;
+  color: var(--primary-foreground) !important;
+  border-color: var(--win95-border-primary-outset) !important;
+}
+
+.win95 [data-slot="button"][class*="bg-primary"]:active {
+  border-color: var(--win95-border-primary-inset) !important;
+}
+
+/* Win95 outline buttons - keep outset border */
+.win95 [data-slot="button"][class*="border"] {
+  border-style: outset !important;
+  border-width: 2px !important;
+}
+
+.win95 [data-slot="button"][class*="border"]:active {
+  border-style: inset !important;
+}
+
+/* Win95 inputs - inset appearance */
+.win95 [data-slot="input"] {
+  border-style: inset !important;
+  border-width: 2px !important;
+  border-color: var(--win95-border-inset) !important;
+  background-color: var(
+    --card
+  ) !important; /* Use grey (card color) instead of background */
+  box-shadow: none !important;
+}
+
+/* Win95 cards and dialogs - raised window effect */
+.win95 [data-slot="card"],
+.win95 [data-slot="alert-dialog-content"],
+.win95 [data-slot="dialog-content"] {
+  border-style: outset !important;
+  border-width: 2px !important;
+  border-color: var(--win95-border-outset) !important;
+  box-shadow: none !important;
+  background-color: var(--card) !important;
+}
+
+/* Win95 select/dropdown - button-like appearance */
+.win95 [data-slot="select"] {
+  border-style: outset !important;
+  border-width: 2px !important;
+  border-color: var(--win95-border-outset) !important;
+  box-shadow: none !important;
+  background-color: var(
+    --card
+  ) !important; /* Use grey (card color) instead of background */
+}
+
+.win95 [data-slot="select"]:active,
+.win95 [data-slot="select"][data-state="open"] {
+  border-style: inset !important;
+  border-color: var(--win95-border-inset) !important;
+}
+
+/* Win95 popover content - inset borders */
+.win95 [data-slot="select-content"],
+.win95 [data-slot="dropdown-menu-content"],
+.win95 [data-slot="popover-content"] {
+  border-style: inset !important;
+  border-width: 2px !important;
+  border-color: var(--win95-border-inset) !important;
+  box-shadow: none !important;
+}
+
+/* Win95 items - flat appearance (Win95 list items were flat) */
+.win95 [data-slot="item"] {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.win95 [data-slot="item"]:hover {
+  background-color: var(--muted) !important;
+}
+
+/* Win95 focus states - use Win95 blue */
+.win95 [data-slot="button"]:focus-visible,
+.win95 [data-slot="input"]:focus-visible,
+.win95 [data-slot="select"]:focus-visible {
+  outline: 2px solid var(--primary) !important;
+  outline-offset: 2px !important;
+}
+
+/* Win95 breadcrumb bar - grey background */
+.win95 header[class*="border-b"] {
+  background-color: var(--card) !important;
+  border-bottom-color: var(--border) !important;
+}
+
+.win95 header[class*="border-b"] [data-slot="breadcrumb"],
+.win95 header[class*="border-b"] [data-slot="breadcrumb-list"],
+.win95 header[class*="border-b"] [data-slot="breadcrumb-item"],
+.win95 header[class*="border-b"] [data-slot="breadcrumb-link"],
+.win95 header[class*="border-b"] [data-slot="breadcrumb-page"],
+.win95 header[class*="border-b"] [data-slot="breadcrumb-separator"],
+.win95 header[class*="border-b"] button,
+.win95 header[class*="border-b"] [data-slot="separator"] {
+  color: var(--card-foreground) !important;
+}
+
+.win95 header[class*="border-b"] [data-slot="breadcrumb-link"]:hover {
+  opacity: 0.8;
+}
+
+.win95 header[class*="border-b"] [data-slot="separator"] {
+  background-color: var(--card-foreground) !important;
+  opacity: 0.3;
+}
+
+/* Win95 tabs/filter component - remove all rounded corners and blue colors */
+.win95 [data-slot="tabs-list"] {
+  border-radius: 0 !important; /* Remove rounded-lg */
+}
+
+.win95 [data-slot="tabs-highlight"],
+.win95 [data-slot="motion-highlight"] {
+  border-radius: 0 !important; /* Remove rounded-md */
+  background-color: var(
+    --card
+  ) !important; /* Use grey instead of blue background */
+  border-color: var(--border) !important; /* Use grey border */
+}
+
+.win95 [data-slot="motion-highlight-item"],
+.win95 [data-slot="tabs-list"] button,
+.win95 [data-slot="tabs-list"] [role="tab"] {
+  border-radius: 0 !important; /* Remove rounded-md from buttons */
+}
+
+/* Win95 badges inside tabs - remove rounded-full */
+.win95 [data-slot="tabs-list"] .rounded-full,
+.win95 [data-slot="motion-highlight-item"] .rounded-full {
+  border-radius: 0 !important; /* Remove rounded-full from badge numbers */
+}
+
+/* Win95 category tags/badges - remove rounded corners, blue background, and add 3D effect */
+.win95 [data-slot="sidebar-menu-sub"] .rounded-full,
+.win95 [data-slot="sidebar-menu-sub-button"] .rounded-full {
+  border-radius: 0 !important; /* Remove rounded-full from category badges */
+}
+
+/* Win95 category badges - use grey background and 3D outset borders */
+.win95 [data-slot="sidebar-menu-sub"] span[class*="bg-background"],
+.win95 [data-slot="sidebar-menu-sub-button"] span[class*="bg-background"],
+.win95 [data-slot="sidebar-menu-sub"] span[class*="border-input"] {
+  background-color: var(
+    --card
+  ) !important; /* Use grey instead of blue background */
+  border-style: outset !important;
+  border-width: 2px !important;
+  border-color: var(--win95-border-outset) !important;
+  box-shadow: none !important;
+}
+
+/* Win95 category badge colored dots - remove rounded corners */
+.win95 [data-slot="sidebar-menu-sub"] .size-2.rounded-full {
+  border-radius: 0 !important; /* Remove rounded-full from colored dot indicators */
+}
+
+/* Win95 logo container - 3D button appearance */
+/* Target logo containers that have the logo SVG inside */
+.win95 div.bg-primary:has(svg[class*="fill-logo-primary"]),
+.win95 div.bg-primary:has(svg[class*="fill-logo-secondary"]),
+.win95 [data-sidebar="header"] div.bg-primary,
+.win95 [data-slot="sidebar-header"] div.bg-primary,
+.win95 div.bg-primary.flex.items-center.justify-center:has(svg) {
+  background-color: var(--card) !important; /* Use grey instead of blue */
+  border-style: outset !important;
+  border-width: 2px !important;
+  border-color: var(--win95-border-outset) !important;
+  border-radius: 0 !important; /* Remove rounded corners */
+  box-shadow: none !important;
+}
+
+/* Fallback: target any bg-primary div that contains an SVG (for logo containers) */
+.win95 div.bg-primary:has(svg) {
+  background-color: var(--card) !important;
+  border-style: outset !important;
+  border-width: 2px !important;
+  border-color: var(--win95-border-outset) !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+/* Win95 titles and headings - use black text instead of white */
+.win95 h1,
+.win95 h2,
+.win95 h3,
+.win95 h4,
+.win95 h5,
+.win95 h6,
+.win95 [data-slot="card-title"],
+.win95 [class*="text-foreground"]:has(h1),
+.win95 [class*="text-foreground"]:has(h2),
+.win95 [class*="text-foreground"]:has(h3) {
+  color: var(--card-foreground) !important; /* Use black instead of white */
+}
+
+/* Win95 text-foreground elements - change white to black */
+.win95 .text-foreground,
+.win95 [class*="text-foreground"] {
+  color: var(--card-foreground) !important; /* Use black instead of white */
+}
+
+/* Win95 active tab buttons - use black text */
+.win95 [data-slot="motion-highlight-item"][data-state="active"],
+.win95 [data-slot="motion-highlight-item"][data-state="active"].text-foreground,
+.win95
+  [data-slot="motion-highlight-item"][data-state="active"][class*="text-foreground"],
+.win95 [role="tab"][data-state="active"],
+.win95 [role="tab"][data-state="active"].text-foreground,
+.win95 [role="tab"][data-state="active"][class*="text-foreground"] {
+  color: var(--card-foreground) !important; /* Use black instead of white */
+}

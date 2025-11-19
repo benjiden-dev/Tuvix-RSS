@@ -1,0 +1,25 @@
+/* Hacker News theme - orange breadcrumb bar */
+.hackernews header[class*="border-b"] {
+  background-color: var(--primary) !important;
+  border-bottom-color: var(--primary) !important;
+}
+
+.hackernews header[class*="border-b"] [data-slot="breadcrumb"],
+.hackernews header[class*="border-b"] [data-slot="breadcrumb-list"],
+.hackernews header[class*="border-b"] [data-slot="breadcrumb-item"],
+.hackernews header[class*="border-b"] [data-slot="breadcrumb-link"],
+.hackernews header[class*="border-b"] [data-slot="breadcrumb-page"],
+.hackernews header[class*="border-b"] [data-slot="breadcrumb-separator"],
+.hackernews header[class*="border-b"] button,
+.hackernews header[class*="border-b"] [data-slot="separator"] {
+  color: var(--primary-foreground) !important;
+}
+
+.hackernews header[class*="border-b"] [data-slot="breadcrumb-link"]:hover {
+  opacity: 0.8;
+}
+
+.hackernews header[class*="border-b"] [data-slot="separator"] {
+  background-color: var(--primary-foreground) !important;
+  opacity: 0.3;
+}

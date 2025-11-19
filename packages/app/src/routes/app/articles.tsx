@@ -1,0 +1,600 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useInfiniteArticles, useMarkAllRead } from "@/lib/hooks/useArticles";
+import { useRefreshFeeds } from "@/lib/hooks/useArticles";
+import { useUserSettings } from "@/lib/hooks/useUserSettings";
+import { AnimatedArticleList } from "@/components/app/animated-article-list";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  TabsContents,
+  TabsContent,
+} from "@/components/app/tabs-animate";
+import { Badge } from "@/components/ui/badge";
+import { useInView } from "react-intersection-observer";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+import { RefreshCw, Inbox, CheckCheck, Clock, Info } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { Link } from "@tanstack/react-router";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/animate-ui/components/radix/alert-dialog";
+import { motion, useMotionValue, useTransform } from "motion/react";
+import { useIsMobile } from "@/hooks/use-mobile";
+import type { RouterOutputs } from "@/lib/api/trpc";
+
+type Article = RouterOutputs["articles"]["list"]["items"][number];
+
+export const Route = createFileRoute("/app/articles")({
+  component: ArticlesPage,
+  validateSearch: (search: Record<string, unknown>) => {
+    return {
+      category_id: Number(search?.category_id) || undefined,
+    };
+  },
+});
+
+function ArticlesPage() {
+  const search = Route.useSearch();
+  const refreshFeeds = useRefreshFeeds();
+  const markAllRead = useMarkAllRead();
+  const { data: userSettings } = useUserSettings();
+  const { ref, inView } = useInView();
+  const isMobile = useIsMobile();
+  const [showFirstTimeTooltip, setShowFirstTimeTooltip] = useState(false);
+  const [activeFilter, setActiveFilter] = useState("all");
+  const [markAllDialogOpen, setMarkAllDialogOpen] = useState(false);
+  const [markOldDialogOpen, setMarkOldDialogOpen] = useState(false);
+
+  // Smart detection: Track seen article IDs
+  const seenArticleIds = useRef<Set<number>>(new Set());
+  const [newArticleIds, setNewArticleIds] = useState<Set<number>>(new Set());
+
+  // Pull-to-refresh state
+  const [isPulling, setIsPulling] = useState(false);
+  const pullDistance = useMotionValue(0);
+  const pullOpacity = useTransform(pullDistance, [0, 80], [0, 1]);
+  const pullRotation = useTransform(pullDistance, [0, 80], [0, 180]);
+  const startY = useRef(0);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Build filters from search params (only category, not read/saved)
+  const filters: Record<string, unknown> = {};
+  if (search.category_id) filters.categoryId = search.category_id;
+
+  // Fetch all articles (unfiltered by read/saved state)
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+  } = useInfiniteArticles(filters);
+
+  // Show first-time tooltip
+  useEffect(() => {
+    const hasSeenTooltip = localStorage.getItem("hasSeenArticleTooltip");
+    if (!hasSeenTooltip && userSettings) {
+      setShowFirstTimeTooltip(true);
+      localStorage.setItem("hasSeenArticleTooltip", "true");
+    }
+  }, [userSettings]);
+
+  // Get all articles and calculate counts
+  // Backend returns paginated response: {items: Article[], total: number, hasMore: boolean}
+  // Memoize to prevent unnecessary re-renders
+  const allArticles = useMemo(
+    () => data?.pages.flatMap((page: { items: Article[] }) => page.items) || [],
+    [data?.pages],
+  );
+
+  // Track previous article IDs to detect changes
+  const previousArticleIdsRef = useRef<Set<number>>(new Set());
+  const isInitializedRef = useRef(false);
+
+  // Smart detection: Track new articles for animation
+  useEffect(() => {
+    if (!data?.pages?.[0] || allArticles.length === 0) return;
+
+    const currentIds = new Set<number>(allArticles.map((a: Article) => a.id));
+
+    // Initialize seen IDs on first load
+    if (!isInitializedRef.current) {
+      seenArticleIds.current = new Set(currentIds);
+      previousArticleIdsRef.current = new Set(currentIds);
+      isInitializedRef.current = true;
+      return;
+    }
+
+    // Check if article IDs have actually changed
+    const idsChanged =
+      currentIds.size !== previousArticleIdsRef.current.size ||
+      Array.from(currentIds).some(
+        (id) => !previousArticleIdsRef.current.has(id),
+      );
+
+    if (!idsChanged) {
+      // No change, update ref and return early
+      previousArticleIdsRef.current = currentIds;
+      return;
+    }
+
+    const newArticles = allArticles.filter(
+      (a: Article) => !seenArticleIds.current.has(a.id),
+    );
+
+    if (newArticles.length > 0) {
+      // Track new articles for animation
+      setNewArticleIds(new Set<number>(newArticles.map((a: Article) => a.id)));
+
+      // Update seen IDs
+      newArticles.forEach((a: Article) => seenArticleIds.current.add(a.id));
+
+      // Clear new article IDs after animation completes (3 seconds)
+      const timeoutId = setTimeout(() => {
+        setNewArticleIds(new Set());
+      }, 3000);
+
+      // Update previous IDs ref
+      previousArticleIdsRef.current = currentIds;
+
+      return () => clearTimeout(timeoutId);
+    } else {
+      // No new articles, just update seen set with current articles
+      currentIds.forEach((id: number) => seenArticleIds.current.add(id));
+      // Only update state if it's not already empty to avoid unnecessary re-renders
+      setNewArticleIds((prev) => (prev.size > 0 ? new Set() : prev));
+      // Update previous IDs ref
+      previousArticleIdsRef.current = currentIds;
+    }
+  }, [data, allArticles]);
+
+  const totalCount = allArticles.length;
+  const unreadCount = allArticles.filter((a: Article) => !a.read).length;
+  const readCount = allArticles.filter((a: Article) => a.read).length;
+  const savedCount = allArticles.filter((a: Article) => a.saved).length;
+
+  // Filter articles based on active tab
+  const filteredArticles = allArticles.filter((article: Article) => {
+    switch (activeFilter) {
+      case "unread":
+        return !article.read;
+      case "read":
+        return article.read;
+      case "saved":
+        return article.saved;
+      case "all":
+      default:
+        return true;
+    }
+  });
+
+  // Set initial filter from user settings
+  useEffect(() => {
+    if (userSettings?.defaultFilter) {
+      setActiveFilter(userSettings.defaultFilter);
+    }
+  }, [userSettings]);
+
+  // Load more when scrolling to bottom (only for "all" filter)
+  // Other filters are client-side filtered, so we shouldn't fetch more pages
+  useEffect(() => {
+    if (
+      inView &&
+      hasNextPage &&
+      !isFetchingNextPage &&
+      activeFilter === "all"
+    ) {
+      fetchNextPage();
+    }
+  }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage, activeFilter]);
+
+  const handleRefresh = () => {
+    refreshFeeds.mutate();
+  };
+
+  const handleFilterChange = (value: string) => {
+    // Just update local state, no navigation
+    setActiveFilter(value);
+  };
+
+  const handleMarkAllRead = () => {
+    setMarkAllDialogOpen(true);
+  };
+
+  const confirmMarkAllRead = () => {
+    markAllRead.mutate(undefined);
+    setMarkAllDialogOpen(false);
+  };
+
+  const handleMarkOldRead = () => {
+    setMarkOldDialogOpen(true);
+  };
+
+  const confirmMarkOldRead = () => {
+    markAllRead.mutate(3);
+    setMarkOldDialogOpen(false);
+  };
+
+  // Pull-to-refresh handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (!isMobile || !containerRef.current) return;
+
+    // Only allow pull-to-refresh if we're at the top of the page
+    const scrollTop = containerRef.current.scrollTop || window.scrollY;
+    if (scrollTop > 0) return;
+
+    startY.current = e.touches[0].clientY;
+    setIsPulling(true);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isPulling || !isMobile) return;
+
+    const currentY = e.touches[0].clientY;
+    const distance = Math.max(0, currentY - startY.current);
+
+    // Apply resistance - the further you pull, the harder it gets
+    const resistance = 0.5;
+    const adjustedDistance = Math.min(distance * resistance, 100);
+
+    pullDistance.set(adjustedDistance);
+  };
+
+  const handleTouchEnd = () => {
+    if (!isPulling || !isMobile) return;
+
+    const distance = pullDistance.get();
+
+    // Trigger refresh if pulled down far enough
+    if (distance > 60) {
+      handleRefresh();
+    }
+
+    // Reset
+    pullDistance.set(0);
+    setIsPulling(false);
+    startY.current = 0;
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className="flex-1 space-y-4 w-full max-w-full min-w-0"
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* Pull-to-refresh indicator */}
+      {isMobile && (
+        <motion.div
+          className="fixed top-20 left-0 right-0 flex justify-center items-center z-50 pointer-events-none"
+          style={{
+            opacity: pullOpacity,
+          }}
+        >
+          <motion.div
+            className="bg-background/80 backdrop-blur-sm rounded-full p-3 shadow-lg"
+            style={{ rotate: pullRotation }}
+          >
+            <RefreshCw className="w-6 h-6 text-muted-foreground" />
+          </motion.div>
+        </motion.div>
+      )}
+
+      {/* First-time tooltip */}
+      {showFirstTimeTooltip && userSettings && (
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertTitle>Welcome to flow-based reading!</AlertTitle>
+          <AlertDescription>
+            Articles older than {userSettings.autoAgeDays} days are
+            automatically marked as read. Customize this in settings.
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-2"
+              onClick={() => setShowFirstTimeTooltip(false)}
+            >
+              Got it
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Refresh button for desktop */}
+      <div className="w-full hidden sm:flex justify-end">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleRefresh}
+          disabled={isLoading || refreshFeeds.isPending}
+          aria-label="Refresh feeds and fetch new articles"
+          title="Fetch new articles from all feeds"
+        >
+          <RefreshCw
+            className={
+              isLoading || refreshFeeds.isPending ? "animate-spin" : ""
+            }
+            aria-hidden="true"
+          />
+        </Button>
+      </div>
+
+      {/* Articles List */}
+      {isLoading && (
+        <div
+          className="flex flex-col gap-4"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <span className="sr-only">Loading articles, please wait</span>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex flex-col gap-2 p-4 border rounded-lg">
+              <Skeleton className="h-6 w-3/4" />
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-2/3" />
+              <div className="flex gap-2 mt-2">
+                <Skeleton className="h-8 w-20" />
+                <Skeleton className="h-8 w-20" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {isError && (
+        <Alert role="alert" className="text-center py-12">
+          <AlertTitle>Error loading articles</AlertTitle>
+          <AlertDescription>
+            Failed to load articles. Please try again.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {!isLoading && !isError && allArticles.length === 0 && (
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Inbox className="size-12" />
+            </EmptyMedia>
+            <EmptyTitle>No articles yet</EmptyTitle>
+            <EmptyDescription>
+              Start by adding some RSS feed subscriptions to see articles here
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Link to="/app/subscriptions">
+              <Button>Add Subscriptions</Button>
+            </Link>
+          </EmptyContent>
+        </Empty>
+      )}
+
+      {!isLoading && !isError && allArticles.length > 0 && (
+        <Tabs value={activeFilter} onValueChange={handleFilterChange}>
+          {/* Filter Tabs */}
+          <div className="w-full flex flex-col sm:flex-row items-center sm:justify-between gap-4">
+            <div className="w-full sm:w-auto overflow-x-auto scrollbar-hide">
+              <TabsList>
+                <TabsTrigger value="all">
+                  All
+                  {totalCount > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {totalCount}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="unread">
+                  Unread
+                  {unreadCount > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {unreadCount}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="read">
+                  Read
+                  {readCount > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {readCount}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="saved">
+                  Saved
+                  {savedCount > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {savedCount}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+              </TabsList>
+            </div>
+
+            {/* Bulk Actions */}
+            {unreadCount > 0 && (
+              <div className="flex gap-2 w-full sm:w-auto flex-wrap sm:flex-nowrap justify-center sm:justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleMarkOldRead}
+                  disabled={markAllRead.isPending}
+                  className="flex-1 sm:flex-none"
+                >
+                  <Clock className="mr-2 h-4 w-4" />
+                  <span className="hidden sm:inline">Mark old as read</span>
+                  <span className="sm:hidden">Old</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleMarkAllRead}
+                  disabled={markAllRead.isPending}
+                  className="flex-1 sm:flex-none"
+                >
+                  <CheckCheck className="mr-2 h-4 w-4" />
+                  <span className="hidden sm:inline">Mark all as read</span>
+                  <span className="sm:hidden">All</span>
+                </Button>
+              </div>
+            )}
+          </div>
+
+          <TabsContents>
+            <TabsContent value="all">
+              {filteredArticles.length === 0 ? (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Inbox className="size-12" />
+                    </EmptyMedia>
+                    <EmptyTitle>No articles</EmptyTitle>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                <AnimatedArticleList
+                  articles={filteredArticles}
+                  newArticleIds={newArticleIds}
+                >
+                  {/* Infinite scroll trigger - only on "all" tab */}
+                  <div ref={ref} className="flex justify-center py-4">
+                    {isFetchingNextPage && (
+                      <div className="flex items-center gap-2">
+                        <RefreshCw className="animate-spin size-4" />
+                        <span className="text-sm text-muted-foreground">
+                          Loading more articles...
+                        </span>
+                      </div>
+                    )}
+                    {!hasNextPage && allArticles.length > 0 && (
+                      <span className="text-sm text-muted-foreground">
+                        No more articles
+                      </span>
+                    )}
+                  </div>
+                </AnimatedArticleList>
+              )}
+            </TabsContent>
+
+            <TabsContent value="unread">
+              {filteredArticles.length === 0 ? (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Inbox className="size-12" />
+                    </EmptyMedia>
+                    <EmptyTitle>No unread articles</EmptyTitle>
+                    <EmptyDescription>You're all caught up!</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                <AnimatedArticleList
+                  articles={filteredArticles}
+                  newArticleIds={newArticleIds}
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="read">
+              {filteredArticles.length === 0 ? (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Inbox className="size-12" />
+                    </EmptyMedia>
+                    <EmptyTitle>No read articles</EmptyTitle>
+                    <EmptyDescription>
+                      Articles you've read will appear here
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                <AnimatedArticleList
+                  articles={filteredArticles}
+                  newArticleIds={newArticleIds}
+                />
+              )}
+            </TabsContent>
+
+            <TabsContent value="saved">
+              {filteredArticles.length === 0 ? (
+                <Empty>
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Inbox className="size-12" />
+                    </EmptyMedia>
+                    <EmptyTitle>No saved articles</EmptyTitle>
+                    <EmptyDescription>
+                      Save articles to read them later
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              ) : (
+                <AnimatedArticleList
+                  articles={filteredArticles}
+                  newArticleIds={newArticleIds}
+                />
+              )}
+            </TabsContent>
+          </TabsContents>
+        </Tabs>
+      )}
+
+      {/* Mark All Read Confirmation Dialog */}
+      <AlertDialog open={markAllDialogOpen} onOpenChange={setMarkAllDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark all articles as read?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark all articles as read. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmMarkAllRead}>
+              Mark as read
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Mark Old Read Confirmation Dialog */}
+      <AlertDialog open={markOldDialogOpen} onOpenChange={setMarkOldDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Mark old articles as read?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will mark all articles older than 3 days as read. This action
+              cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmMarkOldRead}>
+              Mark as read
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

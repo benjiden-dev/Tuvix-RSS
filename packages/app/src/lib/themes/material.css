@@ -1,0 +1,7 @@
+/* Material Design theme - flat design, no borders */
+.material [data-slot="card"],
+.material [data-slot="item"],
+.material [data-slot="alert-dialog-content"],
+.material [data-slot="dialog-content"] {
+  border: none !important; /* Remove borders from cards and dialogs for flat design */
+}

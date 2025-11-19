@@ -1,0 +1,2055 @@
+/**
+ * Subscriptions Router
+ *
+ * Handles RSS feed subscriptions, OPML import/export, filters, and discovery.
+ */
+
+import { z } from "zod";
+import { TRPCError } from "@trpc/server";
+import { eq, and } from "drizzle-orm";
+import { router, rateLimitedProcedure } from "@/trpc/init";
+import { normalizeFeedUrl } from "@/utils/url-normalize";
+import type { Opml } from "@/types/feed";
+import {
+  urlValidator,
+  customTitleValidator,
+  categoryNamesArrayValidator,
+  idArrayValidator,
+  STRING_LIMITS,
+} from "@/types/validators";
+import {
+  checkSourceLimit,
+  incrementSourceCount,
+  decrementSourceCount,
+  recalculateUsage,
+} from "@/services/limits";
+import { CategorySuggestionSchema, ImportJobSchema } from "@/types";
+import {
+  subscriptionResponseSchema,
+  selectSubscriptionFilterSchema,
+} from "@/db/schemas.zod";
+import {
+  createPaginatedSchema,
+  paginationInputSchema,
+  createPaginatedResponse,
+} from "@/types/pagination";
+import * as schema from "@/db/schema";
+import { generateColorFromString } from "@/utils/color-generator";
+import { requireOwnership, findOrCreateCategory } from "@/db/helpers";
+import {
+  transformSubscriptionFilter,
+  fetchSubscriptionCategories,
+  fetchSubscriptionFilters,
+  buildSubscriptionResponse,
+} from "@/db/transformers";
+import { fetchAndDiscoverCategories } from "@/services/category-discovery";
+import { discoverFavicon } from "@/services/favicon-fetcher";
+
+export const subscriptionsRouter = router({
+  /**
+   * List all user's subscriptions with pagination
+   */
+  list: rateLimitedProcedure
+    .input(paginationInputSchema)
+    .output(createPaginatedSchema(subscriptionResponseSchema))
+    .query(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Get all subscriptions with sources (fetch one extra for pagination)
+      const subscriptionsWithSources = await ctx.db
+        .select()
+        .from(schema.subscriptions)
+        .innerJoin(
+          schema.sources,
+          eq(schema.subscriptions.sourceId, schema.sources.id),
+        )
+        .where(eq(schema.subscriptions.userId, userId))
+        .limit(input.limit + 1)
+        .offset(input.offset);
+
+      // Bulk fetch categories and filters (prevents N+1 query)
+      // Only fetch for the subscriptions we'll return (not the extra one)
+      const subscriptionIds = subscriptionsWithSources
+        .slice(0, input.limit)
+        .map((row) => row.subscriptions.id);
+
+      const categoriesMap = await fetchSubscriptionCategories(
+        ctx.db,
+        subscriptionIds,
+      );
+      const filtersMap = await fetchSubscriptionFilters(
+        ctx.db,
+        subscriptionIds,
+      );
+
+      // Build results with categories and filters
+      const allResults = subscriptionsWithSources.map((row) => {
+        const subscription = row.subscriptions;
+        const source = row.sources;
+
+        return buildSubscriptionResponse(
+          subscription,
+          source,
+          categoriesMap.get(subscription.id) || [],
+          filtersMap.get(subscription.id) || [],
+        );
+      });
+
+      return createPaginatedResponse(allResults, input.limit, input.offset);
+    }),
+
+  /**
+   * Get single subscription by ID
+   */
+  getById: rateLimitedProcedure
+    .input(z.object({ id: z.number() }))
+    .output(subscriptionResponseSchema)
+    .query(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Verify ownership and get subscription with source
+      const result = await ctx.db
+        .select()
+        .from(schema.subscriptions)
+        .innerJoin(
+          schema.sources,
+          eq(schema.subscriptions.sourceId, schema.sources.id),
+        )
+        .where(
+          and(
+            eq(schema.subscriptions.id, input.id),
+            eq(schema.subscriptions.userId, userId),
+          ),
+        )
+        .limit(1);
+
+      if (!result.length) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Subscription not found or not accessible",
+        });
+      }
+
+      const subscription = result[0].subscriptions;
+      const source = result[0].sources;
+
+      // Fetch categories and filters
+      const categoriesMap = await fetchSubscriptionCategories(ctx.db, [
+        subscription.id,
+      ]);
+      const filtersMap = await fetchSubscriptionFilters(ctx.db, [
+        subscription.id,
+      ]);
+
+      return buildSubscriptionResponse(
+        subscription,
+        source,
+        categoriesMap.get(subscription.id) || [],
+        filtersMap.get(subscription.id) || [],
+      );
+    }),
+
+  /**
+   * Create new subscription (subscribe to feed)
+   */
+  create: rateLimitedProcedure
+    .input(
+      z.object({
+        url: urlValidator,
+        customTitle: customTitleValidator,
+        categoryIds: idArrayValidator(100).optional(),
+        newCategoryNames: categoryNamesArrayValidator.optional(),
+        iconUrl: urlValidator.optional(),
+        iconType: z.enum(["auto", "custom", "none"]).optional(),
+      }),
+    )
+    .output(subscriptionResponseSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Step 1: Fetch and parse the feed to validate it
+      const { parseFeed } = await import("feedsmith");
+
+      let feedUrl = input.url;
+      let feedData;
+
+      try {
+        const response = await fetch(feedUrl, {
+          headers: {
+            "User-Agent": "TuvixRSS/1.0",
+            Accept:
+              "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          },
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const feedContent = await response.text();
+        const result = parseFeed(feedContent);
+        feedData = result.feed;
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Failed to fetch or parse feed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        });
+      }
+
+      // Step 2: Extract metadata from feed
+      const feedTitle =
+        "title" in feedData && feedData.title
+          ? feedData.title
+          : "Untitled Feed";
+      const feedDescription =
+        "description" in feedData && feedData.description
+          ? feedData.description
+          : "subtitle" in feedData && feedData.subtitle
+            ? feedData.subtitle
+            : undefined;
+      const siteUrl =
+        "link" in feedData && feedData.link
+          ? feedData.link
+          : "links" in feedData &&
+              Array.isArray(feedData.links) &&
+              feedData.links[0]?.href
+            ? feedData.links[0].href
+            : undefined;
+
+      // Step 3: Check if source exists, create if not
+      const existingSources = await ctx.db
+        .select()
+        .from(schema.sources)
+        .where(eq(schema.sources.url, feedUrl))
+        .limit(1);
+
+      let sourceId: number;
+
+      if (existingSources.length > 0) {
+        sourceId = existingSources[0].id;
+
+        // Update source metadata if we have new info
+        await ctx.db
+          .update(schema.sources)
+          .set({
+            title: feedTitle,
+            description: feedDescription,
+            siteUrl,
+            lastFetched: new Date(),
+          })
+          .where(eq(schema.sources.id, sourceId));
+      } else {
+        // Create new source
+        const newSource = await ctx.db
+          .insert(schema.sources)
+          .values({
+            url: feedUrl,
+            title: feedTitle,
+            description: feedDescription,
+            siteUrl,
+            iconUrl: input.iconUrl || null,
+            iconType: input.iconType || "auto",
+            lastFetched: new Date(),
+          })
+          .returning();
+
+        sourceId = newSource[0].id;
+      }
+
+      // Step 4: Check if user is already subscribed
+      const existingSubscription = await ctx.db
+        .select()
+        .from(schema.subscriptions)
+        .where(
+          and(
+            eq(schema.subscriptions.userId, userId),
+            eq(schema.subscriptions.sourceId, sourceId),
+          ),
+        )
+        .limit(1);
+
+      if (existingSubscription.length > 0) {
+        throw new TRPCError({
+          code: "CONFLICT",
+          message: "Already subscribed to this feed",
+        });
+      }
+
+      // Step 5: Check source limit (this is a new unique source for the user)
+      const limitCheck = await checkSourceLimit(ctx.db, userId);
+      if (!limitCheck.allowed) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: `You have reached your limit of ${limitCheck.limit} RSS sources. Please upgrade your plan.`,
+        });
+      }
+
+      // Step 6: Create subscription
+      const newSubscription = await ctx.db
+        .insert(schema.subscriptions)
+        .values({
+          userId,
+          sourceId,
+          customTitle: input.customTitle || null,
+          filterEnabled: false,
+          filterMode: "include",
+        })
+        .returning();
+
+      const subscriptionId = newSubscription[0].id;
+
+      // Step 7: Update usage stats (increment source count)
+      await incrementSourceCount(ctx.db, userId);
+
+      // Step 8: Link existing categories
+      if (input.categoryIds && input.categoryIds.length > 0) {
+        const categoryLinks = input.categoryIds.map((categoryId) => ({
+          subscriptionId,
+          categoryId,
+        }));
+
+        await ctx.db
+          .insert(schema.subscriptionCategories)
+          .values(categoryLinks);
+      }
+
+      // Step 7: Create and link new categories (with normalization)
+      if (input.newCategoryNames && input.newCategoryNames.length > 0) {
+        const categoryIds: number[] = [];
+        for (const name of input.newCategoryNames) {
+          // Find or create category (normalizes by name)
+          const categoryId = await findOrCreateCategory(
+            ctx.db,
+            schema.categories,
+            userId,
+            name,
+            generateColorFromString,
+          );
+          categoryIds.push(categoryId);
+        }
+
+        // Link all categories to subscription
+        if (categoryIds.length > 0) {
+          const categoryLinks = categoryIds.map((categoryId) => ({
+            subscriptionId,
+            categoryId,
+          }));
+
+          await ctx.db
+            .insert(schema.subscriptionCategories)
+            .values(categoryLinks);
+        }
+      }
+
+      // Step 8: Fetch the complete subscription to return
+      const result = await ctx.db
+        .select()
+        .from(schema.subscriptions)
+        .innerJoin(
+          schema.sources,
+          eq(schema.subscriptions.sourceId, schema.sources.id),
+        )
+        .where(eq(schema.subscriptions.id, subscriptionId))
+        .limit(1);
+
+      const subscription = result[0].subscriptions;
+      const source = result[0].sources;
+
+      // Get categories
+      const categoriesMap = await fetchSubscriptionCategories(ctx.db, [
+        subscriptionId,
+      ]);
+
+      return buildSubscriptionResponse(
+        subscription,
+        source,
+        categoriesMap.get(subscriptionId) || [],
+        [], // New subscriptions have no filters
+      );
+    }),
+
+  /**
+   * Update subscription (title, categories, filters)
+   */
+  update: rateLimitedProcedure
+    .input(
+      z.object({
+        id: z.number(),
+        customTitle: customTitleValidator,
+        categoryIds: idArrayValidator(100).optional(),
+        newCategoryNames: categoryNamesArrayValidator.optional(),
+        filterEnabled: z.boolean().optional(),
+        filterMode: z.enum(["include", "exclude"]).optional(),
+      }),
+    )
+    .output(subscriptionResponseSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Verify ownership
+      await requireOwnership<typeof schema.subscriptions.$inferSelect>(
+        ctx.db,
+        schema.subscriptions,
+        input.id,
+        userId,
+        "Subscription",
+      );
+
+      // Build update object for subscription fields
+      const updates: Partial<typeof schema.subscriptions.$inferInsert> = {};
+      let hasUpdates = false;
+
+      if (input.customTitle !== undefined) {
+        updates.customTitle = input.customTitle || null;
+        hasUpdates = true;
+      }
+      if (input.filterEnabled !== undefined) {
+        updates.filterEnabled = input.filterEnabled;
+        hasUpdates = true;
+      }
+      if (input.filterMode !== undefined) {
+        updates.filterMode = input.filterMode;
+        hasUpdates = true;
+      }
+
+      // Update subscription fields if any updates provided
+      if (hasUpdates) {
+        updates.updatedAt = new Date();
+        await ctx.db
+          .update(schema.subscriptions)
+          .set(updates)
+          .where(eq(schema.subscriptions.id, input.id));
+      }
+
+      // Create and link new categories (with normalization)
+      const allCategoryIds = [...(input.categoryIds || [])];
+
+      if (input.newCategoryNames && input.newCategoryNames.length > 0) {
+        for (const name of input.newCategoryNames) {
+          // Find or create category (normalizes by name)
+          const categoryId = await findOrCreateCategory(
+            ctx.db,
+            schema.categories,
+            userId,
+            name,
+            generateColorFromString,
+          );
+          allCategoryIds.push(categoryId);
+        }
+      }
+
+      // Update categories (both existing and newly created)
+      if (
+        input.categoryIds !== undefined ||
+        input.newCategoryNames !== undefined
+      ) {
+        // Delete all existing category links
+        await ctx.db
+          .delete(schema.subscriptionCategories)
+          .where(eq(schema.subscriptionCategories.subscriptionId, input.id));
+
+        // Insert new links if any
+        if (allCategoryIds.length > 0) {
+          const categoryLinks = allCategoryIds.map((categoryId) => ({
+            subscriptionId: input.id,
+            categoryId,
+          }));
+
+          await ctx.db
+            .insert(schema.subscriptionCategories)
+            .values(categoryLinks);
+        }
+      }
+
+      // Fetch complete subscription to return
+      const result = await ctx.db
+        .select()
+        .from(schema.subscriptions)
+        .innerJoin(
+          schema.sources,
+          eq(schema.subscriptions.sourceId, schema.sources.id),
+        )
+        .where(eq(schema.subscriptions.id, input.id))
+        .limit(1);
+
+      const subscription = result[0].subscriptions;
+      const source = result[0].sources;
+
+      // Fetch categories and filters
+      const categoriesMap = await fetchSubscriptionCategories(ctx.db, [
+        input.id,
+      ]);
+      const filtersMap = await fetchSubscriptionFilters(ctx.db, [input.id]);
+
+      return buildSubscriptionResponse(
+        subscription,
+        source,
+        categoriesMap.get(input.id) || [],
+        filtersMap.get(input.id) || [],
+      );
+    }),
+
+  /**
+   * Delete subscription (unsubscribe)
+   */
+  delete: rateLimitedProcedure
+    .input(z.object({ id: z.number() }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Verify ownership and get subscription data
+      const subscription = await requireOwnership<
+        typeof schema.subscriptions.$inferSelect
+      >(ctx.db, schema.subscriptions, input.id, userId, "Subscription");
+
+      const sourceId = subscription.sourceId;
+
+      // Delete subscription (cascade will delete categories and filters)
+      await ctx.db
+        .delete(schema.subscriptions)
+        .where(eq(schema.subscriptions.id, input.id));
+
+      // Check if user has any other subscriptions to this source
+      const remainingSubscriptions = await ctx.db
+        .select()
+        .from(schema.subscriptions)
+        .where(
+          and(
+            eq(schema.subscriptions.userId, userId),
+            eq(schema.subscriptions.sourceId, sourceId),
+          ),
+        )
+        .limit(1);
+
+      // If no other subscriptions to this source, decrement source count
+      if (remainingSubscriptions.length === 0) {
+        await decrementSourceCount(ctx.db, userId);
+      }
+
+      return { success: true };
+    }),
+
+  /**
+   * Discover feeds on a website
+   */
+  discover: rateLimitedProcedure
+    .input(z.object({ url: urlValidator }))
+    .output(
+      z.array(
+        z.object({
+          url: z.string(),
+          title: z.string(),
+          type: z.enum(["rss", "atom"]),
+          description: z.string().optional(),
+        }),
+      ),
+    )
+    .mutation(async ({ ctx: _ctx, input }) => {
+      const { parseFeed } = await import("feedsmith");
+      const discoveredFeeds: {
+        url: string;
+        title: string;
+        type: "rss" | "atom";
+        description?: string;
+      }[] = [];
+      const seenUrls = new Set<string>();
+      const seenFeedIds = new Set<string>();
+
+      // Helper to check if URL is a valid feed
+      const checkFeed = async (feedUrl: string): Promise<boolean> => {
+        try {
+          const response = await fetch(feedUrl, {
+            headers: {
+              "User-Agent": "TuvixRSS/1.0",
+              Accept:
+                "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+            },
+            signal: AbortSignal.timeout(10000),
+          });
+
+          if (!response.ok) return false;
+
+          // Get final URL after redirects and normalize it for deduplication
+          const finalUrl = response.url;
+          const normalizedUrl = normalizeFeedUrl(finalUrl);
+
+          // Check if we've already seen this normalized final URL
+          if (seenUrls.has(normalizedUrl)) return false;
+
+          // Mark URL as seen immediately to prevent race conditions with parallel checks
+          seenUrls.add(normalizedUrl);
+
+          const feedContent = await response.text();
+          const result = parseFeed(feedContent);
+          const feed = result.feed;
+
+          // Extract feed identifier for content-based deduplication
+          // Only Atom feeds have a reliable unique 'id' field
+          // RSS feeds don't have a unique identifier, so we only deduplicate by URL
+          let feedId: string | null = null;
+          if (result.format === "atom" && "id" in feed && feed.id) {
+            feedId = String(feed.id);
+          }
+
+          // Check if we've already seen a feed with the same content identifier
+          // (Only applies to Atom feeds with id field)
+          if (feedId && seenFeedIds.has(feedId)) {
+            return false;
+          }
+
+          // Mark feed ID as seen
+          if (feedId) {
+            seenFeedIds.add(feedId);
+          }
+
+          // Determine feed type
+          const type: "rss" | "atom" =
+            result.format === "atom" ? "atom" : "rss";
+          const title =
+            "title" in feed && feed.title ? feed.title : "Untitled Feed";
+          const description =
+            "description" in feed && feed.description
+              ? feed.description
+              : "subtitle" in feed && feed.subtitle
+                ? feed.subtitle
+                : undefined;
+
+          // Store original discovered URL for display (not the final redirected URL)
+          discoveredFeeds.push({
+            url: feedUrl,
+            title,
+            type,
+            description,
+          });
+
+          return true;
+        } catch {
+          return false;
+        }
+      };
+
+      // Step 1: Try common feed paths
+      const siteUrl = new URL(input.url);
+      const baseUrl = `${siteUrl.protocol}//${siteUrl.hostname}${siteUrl.port ? ":" + siteUrl.port : ""}`;
+      // Get the pathname and ensure it ends with / for proper path joining
+      const inputPathname = siteUrl.pathname.endsWith("/")
+        ? siteUrl.pathname
+        : `${siteUrl.pathname}/`;
+
+      const commonPaths = [
+        "/feed",
+        "/rss",
+        "/atom",
+        "/atom.xml",
+        "/feed.xml",
+        "/rss.xml",
+        "/index.xml",
+        "/feeds/posts/default",
+        "/feeds/all.atom",
+        "/feed/atom/",
+        "/blog/feed",
+        "/blog/rss",
+        "/blog/rss.xml",
+        "/blog/feed.xml",
+        "/blog/atom.xml",
+      ];
+
+      // Try common paths relative to base domain
+      await Promise.all(
+        commonPaths.map((path) => checkFeed(`${baseUrl}${path}`)),
+      );
+
+      // Also try common paths relative to the input URL's pathname
+      // (e.g., if input is /blog/, try /blog/rss.xml)
+      if (inputPathname !== "/") {
+        const pathRelativePaths = [
+          "feed",
+          "rss",
+          "atom",
+          "atom.xml",
+          "feed.xml",
+          "rss.xml",
+          "index.xml",
+        ];
+        await Promise.all(
+          pathRelativePaths.map((path) =>
+            checkFeed(`${baseUrl}${inputPathname}${path}`),
+          ),
+        );
+      }
+
+      // Step 2: Fetch HTML and parse for feed links
+      try {
+        const response = await fetch(input.url, {
+          headers: {
+            "User-Agent": "TuvixRSS/1.0",
+            Accept: "text/html,application/xhtml+xml",
+          },
+          signal: AbortSignal.timeout(10000),
+        });
+
+        if (response.ok) {
+          const html = await response.text();
+
+          // Parse for RSS/Atom link tags using regex
+          const linkRegex =
+            /<link[^>]*type=["'](application\/rss\+xml|application\/atom\+xml)["'][^>]*>/gi;
+          const matches = html.matchAll(linkRegex);
+
+          const feedUrls: string[] = [];
+
+          for (const match of matches) {
+            const linkTag = match[0];
+
+            // Extract href
+            const hrefMatch = linkTag.match(/href=["']([^"']+)["']/i);
+            if (hrefMatch) {
+              let feedUrl = hrefMatch[1];
+
+              // Resolve relative URLs
+              if (feedUrl.startsWith("/")) {
+                feedUrl = `${baseUrl}${feedUrl}`;
+              } else if (!feedUrl.startsWith("http")) {
+                feedUrl = `${baseUrl}/${feedUrl}`;
+              }
+
+              feedUrls.push(feedUrl);
+            }
+          }
+
+          // Check discovered feeds in parallel
+          await Promise.all(feedUrls.map(checkFeed));
+        }
+      } catch {
+        // HTML fetch failed, but we may have found feeds via common paths
+      }
+
+      // Step 3: If no feeds found, return error
+      if (discoveredFeeds.length === 0) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "No RSS or Atom feeds found on this website",
+        });
+      }
+
+      return discoveredFeeds;
+    }),
+
+  /**
+   * Preview feed before subscribing
+   */
+  preview: rateLimitedProcedure
+    .input(z.object({ url: urlValidator }))
+    .output(
+      z.object({
+        title: z.string(),
+        description: z.string().optional(),
+        siteUrl: z.string().optional(),
+        iconUrl: z.string().optional(),
+        suggestedCategories: z.array(CategorySuggestionSchema),
+      }),
+    )
+    .query(async ({ ctx: _ctx, input }) => {
+      const { parseFeed } = await import("feedsmith");
+
+      // Step 1: Fetch and parse the feed
+      let feedData;
+      let feedUrl = input.url;
+
+      try {
+        const response = await fetch(feedUrl, {
+          headers: {
+            "User-Agent": "TuvixRSS/1.0",
+            Accept:
+              "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+          },
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const feedContent = await response.text();
+        const result = parseFeed(feedContent);
+        feedData = result.feed;
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Failed to fetch or parse feed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        });
+      }
+
+      // Step 2: Extract metadata
+      const title =
+        "title" in feedData && feedData.title
+          ? feedData.title
+          : "Untitled Feed";
+      const description =
+        "description" in feedData && feedData.description
+          ? feedData.description
+          : "subtitle" in feedData && feedData.subtitle
+            ? feedData.subtitle
+            : undefined;
+      const siteUrl =
+        "link" in feedData && feedData.link
+          ? feedData.link
+          : "links" in feedData &&
+              Array.isArray(feedData.links) &&
+              feedData.links[0]?.href
+            ? feedData.links[0].href
+            : undefined;
+
+      // Step 3: Try to get favicon URL
+      // Use favicon-fetcher service with fallback strategies
+      let iconUrl: string | undefined;
+      try {
+        const feedIconUrl =
+          "image" in feedData &&
+          typeof feedData.image === "object" &&
+          feedData.image !== null &&
+          "url" in feedData.image &&
+          typeof feedData.image.url === "string"
+            ? feedData.image.url
+            : "icon" in feedData && typeof feedData.icon === "string"
+              ? feedData.icon
+              : undefined;
+
+        const faviconResult = await discoverFavicon(input.url, feedIconUrl);
+        iconUrl = faviconResult.iconUrl || undefined;
+      } catch {
+        // Failed to discover favicon, continue without it
+      }
+
+      // Step 4: Extract category suggestions from feed
+      const suggestedCategories: {
+        name: string;
+        count: number;
+        color: string;
+      }[] = [];
+      const categoryMap = new Map<string, number>();
+
+      // Helper to extract category name from various formats
+      const extractCategoryName = (cat: unknown): string | null => {
+        if (typeof cat === "string") return cat;
+        if (typeof cat === "object" && cat !== null) {
+          const obj = cat as Record<string, unknown>;
+          return (
+            (obj.term as string) ||
+            (obj.label as string) ||
+            (obj.name as string) ||
+            null
+          );
+        }
+        return null;
+      };
+
+      // Extract categories from feed metadata
+      if ("categories" in feedData && Array.isArray(feedData.categories)) {
+        for (const cat of feedData.categories) {
+          const catName = extractCategoryName(cat);
+          if (catName) {
+            categoryMap.set(catName, (categoryMap.get(catName) || 0) + 1);
+          }
+        }
+      }
+
+      // Extract categories from first few entries
+      if ("entries" in feedData && Array.isArray(feedData.entries)) {
+        for (const entry of feedData.entries.slice(0, 10)) {
+          if (entry.categories && Array.isArray(entry.categories)) {
+            for (const cat of entry.categories) {
+              const catName = extractCategoryName(cat);
+              if (catName) {
+                categoryMap.set(catName, (categoryMap.get(catName) || 0) + 1);
+              }
+            }
+          }
+        }
+      }
+
+      // Convert to array and sort by count
+      for (const [name, count] of categoryMap.entries()) {
+        suggestedCategories.push({
+          name,
+          count,
+          color: generateColorFromString(name),
+        });
+      }
+
+      suggestedCategories.sort((a, b) => b.count - a.count);
+
+      return {
+        title,
+        description,
+        siteUrl,
+        iconUrl,
+        suggestedCategories: suggestedCategories.slice(0, 10), // Top 10 suggestions
+      };
+    }),
+
+  /**
+   * Export subscriptions as OPML
+   */
+  export: rateLimitedProcedure.output(z.string()).query(async ({ ctx }) => {
+    const { userId } = ctx.user;
+    const { generateOpml } = await import("feedsmith");
+
+    // Get all subscriptions with sources
+    const subscriptionsWithData = await ctx.db
+      .select()
+      .from(schema.subscriptions)
+      .innerJoin(
+        schema.sources,
+        eq(schema.subscriptions.sourceId, schema.sources.id),
+      )
+      .where(eq(schema.subscriptions.userId, userId));
+
+    // Bulk fetch categories and filters for all subscriptions (prevents N+1 query)
+    const subscriptionIds = subscriptionsWithData.map(
+      (row) => row.subscriptions.id,
+    );
+    const categoriesMap = await fetchSubscriptionCategories(
+      ctx.db,
+      subscriptionIds,
+    );
+    const filtersMap = await fetchSubscriptionFilters(ctx.db, subscriptionIds);
+
+    // Build category name map: subscription ID -> category names
+    const categoryNameMap = new Map<number, string[]>();
+    for (const [subscriptionId, categories] of categoriesMap.entries()) {
+      categoryNameMap.set(
+        subscriptionId,
+        categories.map((cat) => cat.name),
+      );
+    }
+
+    // Group subscriptions by category
+    const categorizedSubs = new Map<string, typeof subscriptionsWithData>();
+    const uncategorizedSubs: typeof subscriptionsWithData = [];
+
+    for (const row of subscriptionsWithData) {
+      const categories = categoryNameMap.get(row.subscriptions.id) || [];
+
+      if (categories.length === 0) {
+        uncategorizedSubs.push(row);
+      } else {
+        for (const category of categories) {
+          if (!categorizedSubs.has(category)) {
+            categorizedSubs.set(category, []);
+          }
+          categorizedSubs.get(category)!.push(row);
+        }
+      }
+    }
+
+    // Build OPML outline structure
+    const outlines: Opml.Outline<Date>[] = [];
+
+    // Add categorized subscriptions
+    for (const [category, subs] of categorizedSubs.entries()) {
+      const feedOutlines: Opml.Outline<Date>[] = [];
+
+      for (const row of subs) {
+        const source = row.sources;
+        const subscription = row.subscriptions;
+        const title = subscription.customTitle || source.title;
+        const filters = filtersMap.get(subscription.id) || [];
+
+        // Build filter data for custom attributes
+        const filterData: Record<string, unknown> = {
+          tuvixFilterEnabled: subscription.filterEnabled ? "true" : "false",
+          tuvixFilterMode: subscription.filterMode,
+        };
+
+        // Only include filters attribute if filters exist
+        if (filters.length > 0) {
+          filterData.tuvixFilters = JSON.stringify(
+            filters.map((f) => ({
+              field: f.field,
+              matchType: f.matchType,
+              pattern: f.pattern,
+              caseSensitive: f.caseSensitive,
+            })),
+          );
+        }
+
+        // Add category names as attribute (in addition to folder structure)
+        const categoryNames = categoryNameMap.get(subscription.id) || [];
+        if (categoryNames.length > 0) {
+          filterData.tuvixCategories = JSON.stringify(categoryNames);
+        }
+
+        feedOutlines.push({
+          type: "rss",
+          text: title,
+          title: title,
+          xmlUrl: source.url,
+          htmlUrl: source.siteUrl || undefined,
+          ...filterData,
+        });
+      }
+
+      outlines.push({
+        text: category,
+        title: category,
+        outlines: feedOutlines,
+      });
+    }
+
+    // Add uncategorized subscriptions
+    for (const row of uncategorizedSubs) {
+      const source = row.sources;
+      const subscription = row.subscriptions;
+      const title = subscription.customTitle || source.title;
+      const filters = filtersMap.get(subscription.id) || [];
+
+      // Build filter data for custom attributes
+      const filterData: Record<string, unknown> = {
+        tuvixFilterEnabled: subscription.filterEnabled ? "true" : "false",
+        tuvixFilterMode: subscription.filterMode,
+      };
+
+      // Only include filters attribute if filters exist
+      if (filters.length > 0) {
+        filterData.tuvixFilters = JSON.stringify(
+          filters.map((f) => ({
+            field: f.field,
+            matchType: f.matchType,
+            pattern: f.pattern,
+            caseSensitive: f.caseSensitive,
+          })),
+        );
+      }
+
+      // Add category names as attribute (in addition to folder structure)
+      const categoryNames = categoryNameMap.get(subscription.id) || [];
+      if (categoryNames.length > 0) {
+        filterData.tuvixCategories = JSON.stringify(categoryNames);
+      }
+
+      outlines.push({
+        type: "rss",
+        text: title,
+        title: title,
+        xmlUrl: source.url,
+        htmlUrl: source.siteUrl || undefined,
+        ...filterData,
+      });
+    }
+
+    // Build OPML document structure
+    const opmlDoc: Opml.Document<Date> = {
+      head: {
+        title: "TuvixRSS Subscriptions",
+        dateCreated: new Date(),
+      },
+      body: {
+        outlines,
+      },
+    };
+
+    // Generate OPML XML using feedsmith
+    return generateOpml(opmlDoc, {
+      extraOutlineAttributes: [
+        "tuvixFilterEnabled",
+        "tuvixFilterMode",
+        "tuvixFilters",
+        "tuvixCategories",
+      ],
+    });
+  }),
+
+  /**
+   * Parse OPML file (preview before import)
+   */
+  parseOpml: rateLimitedProcedure
+    .input(
+      z.object({
+        opmlContent: z
+          .string()
+          .min(1)
+          .max(STRING_LIMITS.OPML_CONTENT.max, {
+            message: `OPML file is too large (max ${STRING_LIMITS.OPML_CONTENT.max / 1000000}MB)`,
+          }),
+      }),
+    )
+    .output(
+      z.object({
+        feeds: z.array(
+          z.object({
+            url: z.string(),
+            title: z.string(),
+            categories: z.array(z.string()),
+            filters: z
+              .array(
+                z.object({
+                  field: z.enum([
+                    "title",
+                    "content",
+                    "description",
+                    "author",
+                    "any",
+                  ]),
+                  matchType: z.enum(["contains", "regex", "exact"]),
+                  pattern: z.string(),
+                  caseSensitive: z.boolean(),
+                }),
+              )
+              .optional(),
+            filterEnabled: z.boolean().optional(),
+            filterMode: z.enum(["include", "exclude"]).optional(),
+          }),
+        ),
+        totalCount: z.number(),
+      }),
+    )
+    .mutation(async ({ ctx: _ctx, input }) => {
+      const { parseOpml } = await import("feedsmith");
+
+      // Type for OPML outline structure with custom Tuvix attributes
+      // This extends the feedsmith Opml.Outline type with our custom attributes
+      type OPMLOutlineWithExtensions = Opml.Outline<string> & {
+        // Custom Tuvix attributes (parsed as strings from XML)
+        tuvixFilterEnabled?: string;
+        tuvixFilterMode?: string;
+        tuvixFilters?: string;
+        tuvixCategories?: string;
+        // Legacy attribute names (for compatibility)
+        filterEnabled?: string;
+        filterMode?: string;
+        filters?: string;
+        categories?: string;
+        // Recursive outlines
+        outlines?: OPMLOutlineWithExtensions[];
+      };
+
+      // Parse OPML using feedsmith with extra attributes for filters and categories
+      // The extraOutlineAttributes option adds these attributes to the parsed outlines,
+      // but TypeScript doesn't know about them, so we need to assert the type
+      let opmlData: Opml.Document<string> & {
+        body: { outlines: OPMLOutlineWithExtensions[] };
+      };
+      try {
+        const parsed = parseOpml(input.opmlContent, {
+          extraOutlineAttributes: [
+            "tuvixFilterEnabled",
+            "tuvixFilterMode",
+            "tuvixFilters",
+            "tuvixCategories",
+            "filterEnabled",
+            "filterMode",
+            "filters",
+            "categories",
+          ],
+        });
+        // Type assertion: parseOpml with extraOutlineAttributes returns outlines
+        // with those attributes, but TypeScript doesn't track this
+        opmlData = parsed as typeof opmlData;
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Failed to parse OPML: ${error instanceof Error ? error.message : "Invalid OPML format"}`,
+        });
+      }
+
+      // Helper to parse filters JSON
+      const parseFiltersJson = (
+        jsonString: string | undefined,
+      ): Array<{
+        field: "title" | "content" | "description" | "author" | "any";
+        matchType: "contains" | "regex" | "exact";
+        pattern: string;
+        caseSensitive: boolean;
+      }> | null => {
+        if (!jsonString) return null;
+        try {
+          const parsed = JSON.parse(jsonString) as unknown;
+          if (!Array.isArray(parsed)) return null;
+          // Validate structure and normalize filters (caseSensitive defaults to false)
+          return parsed
+            .filter(
+              (
+                f,
+              ): f is {
+                field: "title" | "content" | "description" | "author" | "any";
+                matchType: "contains" | "regex" | "exact";
+                pattern: string;
+                caseSensitive?: boolean;
+              } => {
+                if (typeof f !== "object" || f === null) return false;
+                if (!("field" in f) || !("matchType" in f) || !("pattern" in f))
+                  return false;
+                const field = (f as { field: unknown }).field;
+                const matchType = (f as { matchType: unknown }).matchType;
+                const pattern = (f as { pattern: unknown }).pattern;
+                return (
+                  typeof field === "string" &&
+                  typeof matchType === "string" &&
+                  typeof pattern === "string" &&
+                  ["title", "content", "description", "author", "any"].includes(
+                    field,
+                  ) &&
+                  ["contains", "regex", "exact"].includes(matchType)
+                );
+              },
+            )
+            .map((f) => ({
+              field: f.field,
+              matchType: f.matchType,
+              pattern: f.pattern,
+              caseSensitive:
+                typeof f.caseSensitive === "boolean" ? f.caseSensitive : false,
+            }));
+        } catch {
+          return null;
+        }
+      };
+
+      // Helper to parse categories JSON
+      const parseCategoriesJson = (
+        jsonString: string | undefined,
+      ): string[] | null => {
+        if (!jsonString) return null;
+        try {
+          const parsed = JSON.parse(jsonString) as unknown;
+          if (!Array.isArray(parsed)) return null;
+          // Validate that all items are strings
+          return parsed.filter(
+            (cat): cat is string => typeof cat === "string" && cat.length > 0,
+          );
+        } catch {
+          return null;
+        }
+      };
+
+      // Helper to convert string boolean to boolean
+      const parseBoolean = (value: string | boolean | undefined): boolean => {
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") return value.toLowerCase() === "true";
+        return false;
+      };
+
+      // Extract feeds from OPML structure
+      const feeds: {
+        url: string;
+        title: string;
+        categories: string[];
+        filters?: Array<{
+          field: "title" | "content" | "description" | "author" | "any";
+          matchType: "contains" | "regex" | "exact";
+          pattern: string;
+          caseSensitive: boolean;
+        }>;
+        filterEnabled?: boolean;
+        filterMode?: "include" | "exclude";
+      }[] = [];
+
+      // Recursive function to traverse OPML outlines
+      const traverseOutlines = (
+        outlines: OPMLOutlineWithExtensions[],
+        parentCategories: string[] = [],
+      ) => {
+        for (const outline of outlines) {
+          // Check if this is a feed or a category
+          if (outline.xmlUrl) {
+            // This is a feed - extract filter data
+            const filterEnabledStr =
+              outline.tuvixFilterEnabled ?? outline.filterEnabled;
+            const filterModeStr = outline.tuvixFilterMode ?? outline.filterMode;
+            const filtersJson = outline.tuvixFilters ?? outline.filters;
+            const categoriesJson =
+              outline.tuvixCategories ?? outline.categories;
+
+            const filters = parseFiltersJson(filtersJson);
+            const filterEnabled = filterEnabledStr
+              ? parseBoolean(filterEnabledStr)
+              : undefined;
+            const filterMode = filterModeStr
+              ? (filterModeStr as "include" | "exclude")
+              : undefined;
+
+            // Parse categories from attribute, merge with folder-based categories
+            const attributeCategories =
+              parseCategoriesJson(categoriesJson) || [];
+            // Merge: folder-based categories come first, then attribute categories
+            // Remove duplicates while preserving order (case-insensitive)
+            const seenLower = new Set<string>();
+            const allCategories: string[] = [];
+            for (const cat of [...parentCategories, ...attributeCategories]) {
+              const lower = cat.toLowerCase();
+              if (!seenLower.has(lower)) {
+                seenLower.add(lower);
+                allCategories.push(cat);
+              }
+            }
+
+            feeds.push({
+              url: outline.xmlUrl,
+              title: outline.title || outline.text || "Untitled Feed",
+              categories: allCategories,
+              // Include filters if they exist (even if empty array after filtering invalid ones)
+              ...(filters !== null ? { filters } : {}),
+              ...(filterEnabled !== undefined ? { filterEnabled } : {}),
+              ...(filterMode ? { filterMode } : {}),
+            });
+          } else if (outline.outlines && outline.outlines.length > 0) {
+            // This is a category folder
+            const categoryName =
+              outline.title || outline.text || "Uncategorized";
+            traverseOutlines(outline.outlines, [
+              ...parentCategories,
+              categoryName,
+            ]);
+          }
+        }
+      };
+
+      // Start traversal from body outlines
+      if (opmlData.body && opmlData.body.outlines) {
+        traverseOutlines(opmlData.body.outlines);
+      }
+
+      return {
+        feeds,
+        totalCount: feeds.length,
+      };
+    }),
+
+  /**
+   * Start OPML import (synchronous for now)
+   */
+  import: rateLimitedProcedure
+    .input(
+      z.object({
+        opmlContent: z
+          .string()
+          .min(1)
+          .max(STRING_LIMITS.OPML_CONTENT.max, {
+            message: `OPML file is too large (max ${STRING_LIMITS.OPML_CONTENT.max / 1000000}MB)`,
+          }),
+        selectedUrls: z.array(urlValidator).max(1000).optional(),
+      }),
+    )
+    .output(
+      z.object({
+        successCount: z.number(),
+        errorCount: z.number(),
+        errors: z.array(z.object({ url: z.string(), error: z.string() })),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+      const { parseOpml, parseFeed } = await import("feedsmith");
+
+      // Type for OPML outline structure with custom Tuvix attributes
+      // This extends the feedsmith Opml.Outline type with our custom attributes
+      type OPMLOutlineWithExtensions = Opml.Outline<string> & {
+        // Custom Tuvix attributes (parsed as strings from XML)
+        tuvixFilterEnabled?: string | boolean;
+        tuvixFilterMode?: string;
+        tuvixFilters?: string;
+        tuvixCategories?: string;
+        // Legacy attribute names (for compatibility)
+        filterEnabled?: string | boolean;
+        filterMode?: string;
+        filters?: string;
+        categories?: string;
+        // Recursive outlines
+        outlines?: OPMLOutlineWithExtensions[];
+      };
+
+      // Parse OPML with extra attributes for filters and categories
+      // The extraOutlineAttributes option adds these attributes to the parsed outlines,
+      // but TypeScript doesn't know about them, so we need to assert the type
+      let opmlData: Opml.Document<string> & {
+        body: { outlines: OPMLOutlineWithExtensions[] };
+      };
+      try {
+        const parsed = parseOpml(input.opmlContent, {
+          extraOutlineAttributes: [
+            "tuvixFilterEnabled",
+            "tuvixFilterMode",
+            "tuvixFilters",
+            "tuvixCategories",
+            "filterEnabled",
+            "filterMode",
+            "filters",
+            "categories",
+          ],
+        });
+        // Type assertion: parseOpml with extraOutlineAttributes returns outlines
+        // with those attributes, but TypeScript doesn't track this
+        opmlData = parsed as typeof opmlData;
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Failed to parse OPML: ${error instanceof Error ? error.message : "Invalid OPML format"}`,
+        });
+      }
+
+      // Helper to parse filters JSON (same as parseOpml)
+      const parseFiltersJson = (
+        jsonString: string | undefined,
+      ): Array<{
+        field: "title" | "content" | "description" | "author" | "any";
+        matchType: "contains" | "regex" | "exact";
+        pattern: string;
+        caseSensitive: boolean;
+      }> | null => {
+        if (!jsonString) return null;
+        try {
+          const parsed = JSON.parse(jsonString) as unknown;
+          if (!Array.isArray(parsed)) return null;
+          // Validate structure and normalize filters (caseSensitive defaults to false)
+          return parsed
+            .filter(
+              (
+                f,
+              ): f is {
+                field: "title" | "content" | "description" | "author" | "any";
+                matchType: "contains" | "regex" | "exact";
+                pattern: string;
+                caseSensitive?: boolean;
+              } => {
+                if (typeof f !== "object" || f === null) return false;
+                if (!("field" in f) || !("matchType" in f) || !("pattern" in f))
+                  return false;
+                const field = (f as { field: unknown }).field;
+                const matchType = (f as { matchType: unknown }).matchType;
+                const pattern = (f as { pattern: unknown }).pattern;
+                return (
+                  typeof field === "string" &&
+                  typeof matchType === "string" &&
+                  typeof pattern === "string" &&
+                  ["title", "content", "description", "author", "any"].includes(
+                    field,
+                  ) &&
+                  ["contains", "regex", "exact"].includes(matchType)
+                );
+              },
+            )
+            .map((f) => ({
+              field: f.field,
+              matchType: f.matchType,
+              pattern: f.pattern,
+              caseSensitive:
+                typeof f.caseSensitive === "boolean" ? f.caseSensitive : false,
+            }));
+        } catch {
+          return null;
+        }
+      };
+
+      // Helper to parse categories JSON
+      const parseCategoriesJson = (
+        jsonString: string | undefined,
+      ): string[] | null => {
+        if (!jsonString) return null;
+        try {
+          const parsed = JSON.parse(jsonString) as unknown;
+          if (!Array.isArray(parsed)) return null;
+          // Validate that all items are strings
+          return parsed.filter(
+            (cat): cat is string => typeof cat === "string" && cat.length > 0,
+          );
+        } catch {
+          return null;
+        }
+      };
+
+      // Helper to convert string boolean to boolean
+      const parseBoolean = (value: string | boolean | undefined): boolean => {
+        if (typeof value === "boolean") return value;
+        if (typeof value === "string") return value.toLowerCase() === "true";
+        return false;
+      };
+
+      // Extract feeds from OPML
+      const feedsToImport: {
+        url: string;
+        title: string;
+        categories: string[];
+        filters?: Array<{
+          field: "title" | "content" | "description" | "author" | "any";
+          matchType: "contains" | "regex" | "exact";
+          pattern: string;
+          caseSensitive: boolean;
+        }>;
+        filterEnabled?: boolean;
+        filterMode?: "include" | "exclude";
+      }[] = [];
+
+      const traverseOutlines = (
+        outlines: OPMLOutlineWithExtensions[],
+        parentCategories: string[] = [],
+      ) => {
+        for (const outline of outlines) {
+          if (outline.xmlUrl) {
+            // Extract filter data
+            const filterEnabledStr =
+              outline.tuvixFilterEnabled ?? outline.filterEnabled;
+            const filterModeStr = outline.tuvixFilterMode ?? outline.filterMode;
+            const filtersJson = outline.tuvixFilters ?? outline.filters;
+            const categoriesJson =
+              outline.tuvixCategories ?? outline.categories;
+
+            const filters = parseFiltersJson(filtersJson);
+            const filterEnabled = filterEnabledStr
+              ? parseBoolean(filterEnabledStr)
+              : undefined;
+            const filterMode = filterModeStr
+              ? (filterModeStr as "include" | "exclude")
+              : undefined;
+
+            // Parse categories from attribute, merge with folder-based categories
+            const attributeCategories =
+              parseCategoriesJson(categoriesJson) || [];
+            // Merge: folder-based categories come first, then attribute categories
+            // Remove duplicates while preserving order (case-insensitive)
+            const seenLower = new Set<string>();
+            const allCategories: string[] = [];
+            for (const cat of [...parentCategories, ...attributeCategories]) {
+              const lower = cat.toLowerCase();
+              if (!seenLower.has(lower)) {
+                seenLower.add(lower);
+                allCategories.push(cat);
+              }
+            }
+
+            feedsToImport.push({
+              url: outline.xmlUrl,
+              title: outline.title || outline.text || "Untitled Feed",
+              categories: allCategories,
+              ...(filters && filters.length > 0 ? { filters } : {}),
+              ...(filterEnabled !== undefined ? { filterEnabled } : {}),
+              ...(filterMode ? { filterMode } : {}),
+            });
+          } else if (outline.outlines && outline.outlines.length > 0) {
+            const categoryName =
+              outline.title || outline.text || "Uncategorized";
+            traverseOutlines(outline.outlines, [
+              ...parentCategories,
+              categoryName,
+            ]);
+          }
+        }
+      };
+
+      if (opmlData.body && opmlData.body.outlines) {
+        traverseOutlines(opmlData.body.outlines);
+      }
+
+      // Filter by selected URLs if provided
+      const feedsToProcess = input.selectedUrls
+        ? feedsToImport.filter((f) => input.selectedUrls!.includes(f.url))
+        : feedsToImport;
+
+      let successCount = 0;
+      let errorCount = 0;
+      const errors: { url: string; error: string }[] = [];
+
+      // Process each feed
+      for (const feedInfo of feedsToProcess) {
+        try {
+          // Fetch and validate feed
+          const response = await fetch(feedInfo.url, {
+            headers: {
+              "User-Agent": "TuvixRSS/1.0",
+              Accept:
+                "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+            },
+            signal: AbortSignal.timeout(15000),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const feedContent = await response.text();
+          const feedResult = parseFeed(feedContent);
+          const feedData = feedResult.feed;
+
+          // Extract metadata
+          const feedTitle =
+            "title" in feedData && feedData.title
+              ? feedData.title
+              : feedInfo.title;
+          const feedDescription =
+            "description" in feedData && feedData.description
+              ? feedData.description
+              : "subtitle" in feedData && feedData.subtitle
+                ? feedData.subtitle
+                : undefined;
+          const siteUrl =
+            "link" in feedData && feedData.link
+              ? feedData.link
+              : "links" in feedData &&
+                  Array.isArray(feedData.links) &&
+                  feedData.links[0]?.href
+                ? feedData.links[0].href
+                : undefined;
+
+          // Check if source exists
+          const existingSources = await ctx.db
+            .select()
+            .from(schema.sources)
+            .where(eq(schema.sources.url, feedInfo.url))
+            .limit(1);
+
+          let sourceId: number;
+
+          if (existingSources.length > 0) {
+            sourceId = existingSources[0].id;
+            await ctx.db
+              .update(schema.sources)
+              .set({
+                title: feedTitle,
+                description: feedDescription,
+                siteUrl,
+                lastFetched: new Date(),
+              })
+              .where(eq(schema.sources.id, sourceId));
+          } else {
+            const newSource = await ctx.db
+              .insert(schema.sources)
+              .values({
+                url: feedInfo.url,
+                title: feedTitle,
+                description: feedDescription,
+                siteUrl,
+                iconType: "auto",
+                lastFetched: new Date(),
+              })
+              .returning();
+            sourceId = newSource[0].id;
+          }
+
+          // Check if already subscribed
+          const existingSubscription = await ctx.db
+            .select()
+            .from(schema.subscriptions)
+            .where(
+              and(
+                eq(schema.subscriptions.userId, userId),
+                eq(schema.subscriptions.sourceId, sourceId),
+              ),
+            )
+            .limit(1);
+
+          if (existingSubscription.length > 0) {
+            // Already subscribed, skip
+            successCount++;
+            continue;
+          }
+
+          // Check source limit before creating subscription
+          const limitCheck = await checkSourceLimit(ctx.db, userId);
+          if (!limitCheck.allowed) {
+            // Limit reached, stop importing
+            errorCount++;
+            errors.push({
+              url: feedInfo.url,
+              error: `Source limit reached (${limitCheck.limit}/${limitCheck.limit}). Remaining feeds not imported.`,
+            });
+            break; // Stop processing remaining feeds
+          }
+
+          // Determine filter settings from OPML data
+          const filterEnabled =
+            feedInfo.filterEnabled !== undefined
+              ? feedInfo.filterEnabled
+              : feedInfo.filters && feedInfo.filters.length > 0
+                ? true
+                : false;
+          const filterMode = feedInfo.filterMode || "include";
+
+          // Create subscription
+          const newSubscription = await ctx.db
+            .insert(schema.subscriptions)
+            .values({
+              userId,
+              sourceId,
+              customTitle: null,
+              filterEnabled,
+              filterMode,
+            })
+            .returning();
+
+          const subscriptionId = newSubscription[0].id;
+
+          // Create/link categories (using normalization helper to prevent duplicates)
+          if (feedInfo.categories.length > 0) {
+            // Track category IDs to prevent duplicate links
+            const linkedCategoryIds = new Set<number>();
+
+            for (const categoryName of feedInfo.categories) {
+              // Use findOrCreateCategory for case-insensitive normalization
+              const categoryId = await findOrCreateCategory(
+                ctx.db,
+                schema.categories,
+                userId,
+                categoryName,
+                generateColorFromString,
+              );
+
+              // Only link if we haven't already linked this category
+              if (!linkedCategoryIds.has(categoryId)) {
+                linkedCategoryIds.add(categoryId);
+                await ctx.db.insert(schema.subscriptionCategories).values({
+                  subscriptionId,
+                  categoryId,
+                });
+              }
+            }
+          }
+
+          // Create filters if provided
+          if (feedInfo.filters && feedInfo.filters.length > 0) {
+            for (const filter of feedInfo.filters) {
+              try {
+                // Validate regex pattern if matchType is 'regex'
+                if (filter.matchType === "regex") {
+                  try {
+                    new RegExp(filter.pattern);
+                  } catch (regexError) {
+                    // Invalid regex - skip this filter but continue
+                    errors.push({
+                      url: feedInfo.url,
+                      error: `Invalid regex pattern in filter: ${regexError instanceof Error ? regexError.message : "Unknown error"}`,
+                    });
+                    continue;
+                  }
+                }
+
+                // Insert filter directly (more efficient than API call)
+                await ctx.db.insert(schema.subscriptionFilters).values({
+                  subscriptionId,
+                  field: filter.field,
+                  matchType: filter.matchType,
+                  pattern: filter.pattern,
+                  caseSensitive: filter.caseSensitive,
+                });
+              } catch (filterError) {
+                // Filter creation failed - log error but continue
+                errors.push({
+                  url: feedInfo.url,
+                  error: `Failed to create filter: ${filterError instanceof Error ? filterError.message : "Unknown error"}`,
+                });
+                // Continue with next filter
+              }
+            }
+          }
+
+          successCount++;
+        } catch (error) {
+          errorCount++;
+          errors.push({
+            url: feedInfo.url,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      }
+
+      // Recalculate usage stats to ensure accuracy after bulk import
+      await recalculateUsage(ctx.db, userId);
+
+      return {
+        successCount,
+        errorCount,
+        errors,
+      };
+    }),
+
+  /**
+   * Get import job status (not needed for synchronous imports)
+   */
+  importStatus: rateLimitedProcedure
+    .input(z.object({ jobId: z.string() }))
+    .output(ImportJobSchema)
+    .query(async ({ ctx: _ctx, input: _input }) => {
+      // Since we're doing synchronous imports, this is not used
+      throw new TRPCError({
+        code: "NOT_FOUND",
+        message: "Import jobs are processed synchronously",
+      });
+    }),
+
+  /**
+   * List filters for a subscription
+   */
+  listFilters: rateLimitedProcedure
+    .input(z.object({ subscriptionId: z.number() }))
+    .output(z.array(selectSubscriptionFilterSchema))
+    .query(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Verify subscription belongs to user
+      await requireOwnership<typeof schema.subscriptions.$inferSelect>(
+        ctx.db,
+        schema.subscriptions,
+        input.subscriptionId,
+        userId,
+        "Subscription",
+      );
+
+      // Get filters
+      const filters = await ctx.db
+        .select()
+        .from(schema.subscriptionFilters)
+        .where(
+          eq(schema.subscriptionFilters.subscriptionId, input.subscriptionId),
+        );
+
+      return filters.map(transformSubscriptionFilter);
+    }),
+
+  /**
+   * Create content filter for subscription
+   */
+  createFilter: rateLimitedProcedure
+    .input(
+      z.object({
+        subscriptionId: z.number(),
+        field: z.enum(["title", "content", "description", "author", "any"]),
+        matchType: z.enum(["contains", "regex", "exact"]),
+        pattern: z
+          .string()
+          .min(1)
+          .max(STRING_LIMITS.FILTER_PATTERN.max, {
+            message: `Pattern must not exceed ${STRING_LIMITS.FILTER_PATTERN.max} characters`,
+          }),
+        caseSensitive: z.boolean().default(false),
+      }),
+    )
+    .output(selectSubscriptionFilterSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Verify subscription belongs to user
+      const subscription = await requireOwnership<
+        typeof schema.subscriptions.$inferSelect
+      >(
+        ctx.db,
+        schema.subscriptions,
+        input.subscriptionId,
+        userId,
+        "Subscription",
+      );
+
+      // Validate regex if matchType is 'regex'
+      if (input.matchType === "regex") {
+        try {
+          new RegExp(input.pattern);
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid regex pattern: ${error instanceof Error ? error.message : "Unknown error"}`,
+          });
+        }
+      }
+
+      // Insert filter
+      const newFilter = await ctx.db
+        .insert(schema.subscriptionFilters)
+        .values({
+          subscriptionId: input.subscriptionId,
+          field: input.field,
+          matchType: input.matchType,
+          pattern: input.pattern,
+          caseSensitive: input.caseSensitive,
+        })
+        .returning();
+
+      // Enable filters on subscription if not already
+      if (!subscription.filterEnabled) {
+        await ctx.db
+          .update(schema.subscriptions)
+          .set({ filterEnabled: true })
+          .where(eq(schema.subscriptions.id, input.subscriptionId));
+      }
+
+      return transformSubscriptionFilter(newFilter[0]);
+    }),
+
+  /**
+   * Update content filter
+   */
+  updateFilter: rateLimitedProcedure
+    .input(
+      z.object({
+        subscriptionId: z.number(),
+        filterId: z.number(),
+        field: z
+          .enum(["title", "content", "description", "author", "any"])
+          .optional(),
+        matchType: z.enum(["contains", "regex", "exact"]).optional(),
+        pattern: z
+          .string()
+          .max(STRING_LIMITS.FILTER_PATTERN.max, {
+            message: `Pattern must not exceed ${STRING_LIMITS.FILTER_PATTERN.max} characters`,
+          })
+          .optional(),
+        caseSensitive: z.boolean().optional(),
+      }),
+    )
+    .output(selectSubscriptionFilterSchema)
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Verify subscription belongs to user
+      await requireOwnership<typeof schema.subscriptions.$inferSelect>(
+        ctx.db,
+        schema.subscriptions,
+        input.subscriptionId,
+        userId,
+        "Subscription",
+      );
+
+      // Verify filter exists and belongs to subscription
+      const existingFilter = await ctx.db
+        .select()
+        .from(schema.subscriptionFilters)
+        .where(
+          and(
+            eq(schema.subscriptionFilters.id, input.filterId),
+            eq(schema.subscriptionFilters.subscriptionId, input.subscriptionId),
+          ),
+        )
+        .limit(1);
+
+      if (!existingFilter.length) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Filter not found",
+        });
+      }
+
+      // Build update object
+      const updates: Partial<typeof schema.subscriptionFilters.$inferInsert> =
+        {};
+      if (input.field !== undefined) updates.field = input.field;
+      if (input.matchType !== undefined) updates.matchType = input.matchType;
+      if (input.pattern !== undefined) updates.pattern = input.pattern;
+      if (input.caseSensitive !== undefined)
+        updates.caseSensitive = input.caseSensitive;
+
+      // Validate regex if updating to regex matchType
+      const finalMatchType = input.matchType || existingFilter[0].matchType;
+      const finalPattern = input.pattern || existingFilter[0].pattern;
+
+      if (finalMatchType === "regex") {
+        try {
+          new RegExp(finalPattern);
+        } catch (error) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `Invalid regex pattern: ${error instanceof Error ? error.message : "Unknown error"}`,
+          });
+        }
+      }
+
+      // Update filter
+      const updatedFilter = await ctx.db
+        .update(schema.subscriptionFilters)
+        .set(updates)
+        .where(eq(schema.subscriptionFilters.id, input.filterId))
+        .returning();
+
+      return transformSubscriptionFilter(updatedFilter[0]);
+    }),
+
+  /**
+   * Delete content filter
+   */
+  deleteFilter: rateLimitedProcedure
+    .input(
+      z.object({
+        subscriptionId: z.number(),
+        filterId: z.number(),
+      }),
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Verify subscription belongs to user
+      await requireOwnership<typeof schema.subscriptions.$inferSelect>(
+        ctx.db,
+        schema.subscriptions,
+        input.subscriptionId,
+        userId,
+        "Subscription",
+      );
+
+      // Delete filter
+      await ctx.db
+        .delete(schema.subscriptionFilters)
+        .where(
+          and(
+            eq(schema.subscriptionFilters.id, input.filterId),
+            eq(schema.subscriptionFilters.subscriptionId, input.subscriptionId),
+          ),
+        );
+
+      return { success: true };
+    }),
+
+  /**
+   * Get suggested categories from RSS feed data
+   */
+  getSuggestedCategories: rateLimitedProcedure
+    .input(z.object({ subscriptionId: z.number() }))
+    .output(z.array(CategorySuggestionSchema))
+    .query(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Get subscription and source
+      const result = await ctx.db
+        .select()
+        .from(schema.subscriptions)
+        .innerJoin(
+          schema.sources,
+          eq(schema.subscriptions.sourceId, schema.sources.id),
+        )
+        .where(
+          and(
+            eq(schema.subscriptions.id, input.subscriptionId),
+            eq(schema.subscriptions.userId, userId),
+          ),
+        )
+        .limit(1);
+
+      if (!result.length) {
+        throw new TRPCError({
+          code: "NOT_FOUND",
+          message: "Subscription not found or not accessible",
+        });
+      }
+
+      const source = result[0].sources;
+
+      // Use category discovery service
+      try {
+        const categorySuggestions = await fetchAndDiscoverCategories(
+          source.url,
+        );
+
+        // Convert to expected format with colors
+        const suggestions = categorySuggestions.map((cat) => ({
+          name: cat.name,
+          count: Math.round(cat.confidence * 100), // Convert confidence to count-like number
+          color: generateColorFromString(cat.name),
+        }));
+
+        return suggestions.slice(0, 10); // Top 10
+      } catch (error) {
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `Failed to fetch feed: ${error instanceof Error ? error.message : "Unknown error"}`,
+        });
+      }
+    }),
+});

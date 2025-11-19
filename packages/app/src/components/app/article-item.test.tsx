@@ -1,0 +1,252 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { render } from "@/test/test-utils";
+import { ArticleItem } from "./article-item";
+import * as useArticlesModule from "@/lib/hooks/useArticles";
+import * as useMobileHook from "@/hooks/use-mobile";
+import type { ModelsArticle } from "@/lib/api/generated/types.gen";
+
+// Mock the hooks
+vi.mock("@/lib/hooks/useArticles");
+vi.mock("@/hooks/use-mobile");
+
+describe("ArticleItem", () => {
+  const mockMarkRead = vi.fn();
+  const mockMarkUnread = vi.fn();
+  const mockSaveArticle = vi.fn();
+  const mockUnsaveArticle = vi.fn();
+
+  const mockArticle: ModelsArticle = {
+    id: 1,
+    title: "Test Article Title",
+    description: "This is a test article description",
+    link: "https://example.com/article",
+    publishedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
+    author: "Test Author",
+    read: false,
+    saved: false,
+    imageUrl: "https://example.com/image.jpg",
+    source: {
+      id: 1,
+      title: "Test Source",
+      url: "https://example.com",
+      iconUrl: "https://example.com/icon.png",
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    // Mock article hooks
+    vi.mocked(useArticlesModule.useMarkArticleRead).mockReturnValue({
+      mutate: mockMarkRead,
+      isPending: false,
+    } as any);
+
+    vi.mocked(useArticlesModule.useMarkArticleUnread).mockReturnValue({
+      mutate: mockMarkUnread,
+      isPending: false,
+    } as any);
+
+    vi.mocked(useArticlesModule.useSaveArticle).mockReturnValue({
+      mutate: mockSaveArticle,
+      isPending: false,
+    } as any);
+
+    vi.mocked(useArticlesModule.useUnsaveArticle).mockReturnValue({
+      mutate: mockUnsaveArticle,
+      isPending: false,
+    } as any);
+
+    // Default to desktop view
+    vi.mocked(useMobileHook.useIsMobile).mockReturnValue(false);
+
+    // Mock window.open
+    global.window.open = vi.fn();
+  });
+
+  it("renders article with title, description, and metadata", () => {
+    render(<ArticleItem article={mockArticle} />);
+
+    expect(screen.getByText("Test Article Title")).toBeInTheDocument();
+    expect(
+      screen.getByText("This is a test article description"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Test Source")).toBeInTheDocument();
+    expect(screen.getByText("Test Author")).toBeInTheDocument();
+  });
+
+  it("formats relative time correctly - hours ago", () => {
+    render(<ArticleItem article={mockArticle} />);
+    expect(screen.getAllByText(/2 hours ago/i).length).toBeGreaterThan(0);
+  });
+
+  it("formats relative time correctly - just now", () => {
+    const recentArticle = {
+      ...mockArticle,
+      publishedAt: new Date().toISOString(),
+    };
+    render(<ArticleItem article={recentArticle} />);
+    expect(screen.getAllByText(/just now/i).length).toBeGreaterThan(0);
+  });
+
+  it("formats relative time correctly - minutes ago", () => {
+    const recentArticle = {
+      ...mockArticle,
+      publishedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(), // 30 minutes ago
+    };
+    render(<ArticleItem article={recentArticle} />);
+    expect(screen.getAllByText(/30 minutes ago/i).length).toBeGreaterThan(0);
+  });
+
+  it("formats relative time correctly - days ago", () => {
+    const oldArticle = {
+      ...mockArticle,
+      publishedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(), // 3 days ago
+    };
+    render(<ArticleItem article={oldArticle} />);
+    expect(screen.getAllByText(/3 days ago/i).length).toBeGreaterThan(0);
+  });
+
+  it("handles read/unread toggle from unread to read", async () => {
+    const user = userEvent.setup();
+    render(<ArticleItem article={mockArticle} />);
+
+    const markReadButton = screen.getByRole("button", { name: /mark read/i });
+    await user.click(markReadButton);
+
+    await waitFor(() => {
+      expect(mockMarkRead).toHaveBeenCalledWith({ id: 1 });
+    });
+  });
+
+  it("handles read/unread toggle from read to unread", async () => {
+    const user = userEvent.setup();
+    const readArticle = { ...mockArticle, read: true };
+    render(<ArticleItem article={readArticle} />);
+
+    const markUnreadButton = screen.getByRole("button", {
+      name: /mark unread/i,
+    });
+    await user.click(markUnreadButton);
+
+    await waitFor(() => {
+      expect(mockMarkUnread).toHaveBeenCalledWith({ id: 1 });
+    });
+  });
+
+  it("handles save/unsave toggle from unsaved to saved", async () => {
+    const user = userEvent.setup();
+    render(<ArticleItem article={mockArticle} />);
+
+    const saveButton = screen.getByRole("button", { name: /^save$/i });
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      expect(mockSaveArticle).toHaveBeenCalledWith({ id: 1 });
+    });
+  });
+
+  it("handles save/unsave toggle from saved to unsaved", async () => {
+    const user = userEvent.setup();
+    const savedArticle = { ...mockArticle, saved: true };
+    render(<ArticleItem article={savedArticle} />);
+
+    const unsaveButton = screen.getByRole("button", { name: /saved/i });
+    await user.click(unsaveButton);
+
+    await waitFor(() => {
+      expect(mockUnsaveArticle).toHaveBeenCalledWith({ id: 1 });
+    });
+  });
+
+  it("opens external link correctly on desktop", async () => {
+    const user = userEvent.setup();
+    render(<ArticleItem article={mockArticle} />);
+
+    const openLinkButton = screen.getByRole("button", { name: /open link/i });
+    await user.click(openLinkButton);
+
+    expect(window.open).toHaveBeenCalledWith(
+      "https://example.com/article",
+      "_blank",
+      "noopener,noreferrer",
+    );
+  });
+
+  it("applies opacity when article is read", () => {
+    const readArticle = { ...mockArticle, read: true };
+    const { container } = render(<ArticleItem article={readArticle} />);
+
+    // Check if the Item component has the opacity-60 class
+    const itemElement = container.querySelector(".opacity-60");
+    expect(itemElement).toBeInTheDocument();
+  });
+
+  it("displays article image when imageUrl is provided", () => {
+    render(<ArticleItem article={mockArticle} />);
+
+    const image = screen.getByAltText("Test Article Title");
+    expect(image).toBeInTheDocument();
+    expect(image).toHaveAttribute("src", "https://example.com/image.jpg");
+  });
+
+  it("does not display image when imageUrl is not provided", () => {
+    const articleWithoutImage = { ...mockArticle, imageUrl: undefined };
+    render(<ArticleItem article={articleWithoutImage} />);
+
+    const image = screen.queryByRole("img", { name: /test article title/i });
+    expect(image).not.toBeInTheDocument();
+  });
+
+  it("renders fallback text for missing data", () => {
+    const incompleteArticle: ModelsArticle = {
+      id: 1,
+      title: undefined,
+      description: undefined,
+      publishedAt: undefined,
+      source: undefined,
+    };
+
+    render(<ArticleItem article={incompleteArticle} />);
+
+    expect(screen.getByText("Untitled Article")).toBeInTheDocument();
+    expect(screen.getAllByText("Unknown Source").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unknown").length).toBeGreaterThan(0);
+  });
+
+  it("disables mark read button when operation is pending", () => {
+    vi.mocked(useArticlesModule.useMarkArticleRead).mockReturnValue({
+      mutate: mockMarkRead,
+      isPending: true,
+    } as any);
+
+    render(<ArticleItem article={mockArticle} />);
+
+    const markReadButton = screen.getByRole("button", { name: /mark read/i });
+    expect(markReadButton).toBeDisabled();
+  });
+
+  it("disables save button when operation is pending", () => {
+    vi.mocked(useArticlesModule.useSaveArticle).mockReturnValue({
+      mutate: mockSaveArticle,
+      isPending: true,
+    } as any);
+
+    render(<ArticleItem article={mockArticle} />);
+
+    const saveButton = screen.getByRole("button", { name: /^save$/i });
+    expect(saveButton).toBeDisabled();
+  });
+
+  it("shows mobile layout when on mobile", () => {
+    vi.mocked(useMobileHook.useIsMobile).mockReturnValue(true);
+    render(<ArticleItem article={mockArticle} />);
+
+    // Mobile layout should not have "Open Link" button
+    expect(
+      screen.queryByRole("button", { name: /open link/i }),
+    ).not.toBeInTheDocument();
+  });
+});

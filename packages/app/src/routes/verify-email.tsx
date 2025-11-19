@@ -1,0 +1,172 @@
+import {
+  createFileRoute,
+  useNavigate,
+  useSearch,
+} from "@tanstack/react-router";
+import { useEffect } from "react";
+import { toast } from "sonner";
+
+import { TuvixLogo } from "@/components/app/tuvix-logo";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { useCurrentUser } from "@/lib/hooks/useAuth";
+import { trpc } from "@/lib/api/trpc";
+import { authClient } from "@/lib/auth-client";
+
+export const Route = createFileRoute("/verify-email")({
+  component: VerifyEmailPage,
+  validateSearch: (search: Record<string, unknown>) => {
+    return {
+      token: (search.token as string) || undefined,
+    };
+  },
+});
+
+function VerifyEmailPage() {
+  const navigate = useNavigate();
+  const { data: user, isPending: userPending } = useCurrentUser();
+  const search = useSearch({ from: "/verify-email" });
+  const { data: verificationStatus, isLoading: statusLoading } =
+    trpc.auth.checkVerificationStatus.useQuery(undefined, {
+      retry: false,
+    });
+
+  const resendMutation = trpc.auth.resendVerificationEmail.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message || "Verification email sent!");
+    },
+    onError: (error) => {
+      toast.error(error.message || "Failed to send verification email");
+    },
+  });
+
+  // Redirect if user is not logged in
+  useEffect(() => {
+    if (!userPending && !user) {
+      navigate({ to: "/" });
+    }
+  }, [userPending, user, navigate]);
+
+  // Redirect if email is already verified or verification is not required
+  useEffect(() => {
+    if (
+      !statusLoading &&
+      verificationStatus &&
+      (!verificationStatus.requiresVerification ||
+        verificationStatus.emailVerified)
+    ) {
+      navigate({ to: "/app/articles", search: { category_id: undefined } });
+    }
+  }, [statusLoading, verificationStatus, navigate]);
+
+  // Handle email verification if token is provided
+  useEffect(() => {
+    if (search.token) {
+      // Better Auth handles verification via the URL
+      // The token will be processed by Better Auth's verify-email endpoint
+      authClient
+        .verifyEmail({
+          query: {
+            token: search.token,
+          },
+        })
+        .then(() => {
+          toast.success("Email verified successfully!");
+          navigate({ to: "/app/articles", search: { category_id: undefined } });
+        })
+        .catch((error) => {
+          toast.error(
+            error?.message ||
+              "Failed to verify email. The link may have expired.",
+          );
+        });
+    }
+  }, [search.token, navigate]);
+
+  // Show loading state
+  if (userPending || statusLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-svh">
+        <div className="text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render if user is not logged in or already verified
+  if (!user || (verificationStatus && verificationStatus.emailVerified)) {
+    return null;
+  }
+
+  return (
+    <div className="grid min-h-svh lg:grid-cols-2">
+      <div className="flex flex-col gap-4 p-6 md:p-10">
+        <div className="flex justify-center gap-2 md:justify-start">
+          <a href="#" className="flex items-center gap-2 font-medium">
+            <div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-md">
+              <TuvixLogo className="size-4" />
+            </div>
+            TuvixRSS
+          </a>
+        </div>
+        <div className="flex flex-1 items-center justify-center">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Verify Your Email</CardTitle>
+              <CardDescription>
+                Please verify your email address to continue using TuvixRSS
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                We've sent a verification link to <strong>{user?.email}</strong>
+                . Please check your inbox and click the link to verify your
+                email address.
+              </p>
+
+              <div className="space-y-2">
+                <Button
+                  onClick={() => resendMutation.mutate()}
+                  disabled={resendMutation.isPending}
+                  className="w-full"
+                >
+                  {resendMutation.isPending
+                    ? "Sending..."
+                    : "Resend Verification Email"}
+                </Button>
+
+                <p className="text-xs text-muted-foreground text-center">
+                  Didn't receive the email? Check your spam folder or click the
+                  button above to resend.
+                </p>
+              </div>
+
+              <div className="pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => navigate({ to: "/app/articles" })}
+                  className="w-full"
+                >
+                  Continue to App
+                </Button>
+                <p className="text-xs text-muted-foreground text-center mt-2">
+                  Note: Some features may be limited until your email is
+                  verified.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+      <div className="bg-muted relative hidden lg:flex flex-col items-center justify-center">
+        <TuvixLogo className="w-96 h-72" />
+        <h1 className="text-6xl font-bold text-logo-secondary">TuvixRSS</h1>
+      </div>
+    </div>
+  );
+}

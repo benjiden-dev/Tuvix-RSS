@@ -1,0 +1,7 @@
+/* Minimal theme - flat design, no borders */
+.minimal [data-slot="card"],
+.minimal [data-slot="item"],
+.minimal [data-slot="alert-dialog-content"],
+.minimal [data-slot="dialog-content"] {
+  border: none !important; /* Remove borders from cards and dialogs for flat design */
+}

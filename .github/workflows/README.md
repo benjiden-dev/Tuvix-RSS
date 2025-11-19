@@ -1,0 +1,238 @@
+# GitHub Actions Workflows
+
+This directory contains CI/CD workflows for the TuvixRSS project.
+
+## Workflow Overview
+
+### Branch Flow
+```
+feature branch → development branch → main branch
+```
+
+### Workflows
+
+#### 1. CI - Feature Branch (`ci-feature.yml`)
+**Triggers:** Pull requests targeting the `development` branch
+
+**Jobs:**
+- Lint & Format Check
+- Type Check
+- Test API
+- Test App
+- Build
+
+**Purpose:** Validate code quality and ensure builds succeed before merging to development.
+
+#### 2. CI - Development Branch (`ci-development.yml`)
+**Triggers:** Pull requests targeting the `main` branch
+
+**Jobs:**
+- Lint & Format Check
+- Type Check
+- Test API (with coverage upload)
+- Test App (with coverage upload)
+- Build (with artifact upload)
+
+**Purpose:** Comprehensive validation before merging to main, including test coverage tracking.
+
+#### 3. Deploy to Cloudflare Workers (`deploy-cloudflare.yml`)
+**Triggers:**
+- Published releases
+- Manual workflow dispatch
+
+**Jobs:**
+- Deploy API to Cloudflare Workers
+- Deploy App to Cloudflare Pages
+- Run database migrations
+- Notify deployment status
+
+**Purpose:** Automated deployment to production on releases.
+
+## Required Secrets
+
+Configure these secrets in your GitHub repository settings:
+
+### Cloudflare Secrets
+- `CLOUDFLARE_API_TOKEN` - Cloudflare API token with Workers and Pages permissions
+- `CLOUDFLARE_ACCOUNT_ID` - Your Cloudflare account ID
+- `CLOUDFLARE_WORKER_NAME` - Name of your Cloudflare Worker (e.g., `tuvix-api`)
+- `CLOUDFLARE_PAGES_PROJECT_NAME` - Name of your Cloudflare Pages project
+- `VITE_API_URL` - API URL for the frontend build (e.g., `https://api.yourdomain.com/trpc`)
+
+### How to Get Cloudflare Credentials
+
+1. **API Token:**
+   - Go to Cloudflare Dashboard → My Profile → API Tokens
+   - Create token with permissions: `Account.Cloudflare Workers:Edit`, `Account.Cloudflare Pages:Edit`
+   - Copy the token
+
+2. **Account ID:**
+   - Found in Cloudflare Dashboard → Right sidebar under "Account ID"
+
+3. **Worker Name:**
+   - Check `packages/api/wrangler.toml` → `name` field
+
+4. **Pages Project Name:**
+   - Create a Pages project in Cloudflare Dashboard or use existing name
+
+## Usage
+
+### Feature Branch Workflow
+1. Create a feature branch from `development`
+2. Make changes and push
+3. Create a PR targeting `development`
+4. CI runs automatically on PR open/update
+
+### Development Branch Workflow
+1. Merge feature branch to `development`
+2. Create a PR from `development` to `main`
+3. CI runs automatically with coverage tracking
+4. Once merged, code is on `main` and ready for release
+
+### Deployment Workflow
+
+#### Automatic (on Release)
+1. Create a new release in GitHub (tagged version, e.g., `v1.0.0`)
+2. Workflow automatically deploys to Cloudflare
+
+#### Manual
+1. Go to Actions → Deploy to Cloudflare Workers
+2. Click "Run workflow"
+3. Enter version tag (e.g., `v1.0.0`)
+4. Click "Run workflow"
+
+## Workflow Features
+
+- **Parallel Jobs:** All CI jobs run in parallel for faster feedback
+- **Concurrency Control:** Duplicate workflow runs are cancelled automatically
+- **Caching:** pnpm and Node.js dependencies are cached
+- **Artifacts:** Build artifacts and coverage reports are uploaded
+- **Coverage Reporting:** Coverage is uploaded to GitHub and displayed in PRs
+- **Environment Protection:** Production deployment uses GitHub environments
+- **Database Migrations:** Automatically runs D1 migrations after successful deployment
+- **Status Notifications:** Deployment summary in GitHub Actions
+- **Release Tag Checkout:** Deployment workflow checks out the specific release tag
+
+## Troubleshooting
+
+### Workflow Fails on Lint/Format
+- Run `pnpm run lint:fix` and `pnpm run format:fix` locally
+- Commit and push fixes
+
+### Deployment Fails
+- Check Cloudflare API token permissions
+- Verify account ID is correct
+- Ensure Worker and Pages projects exist
+- Check Cloudflare dashboard for error details
+
+### Tests Fail
+- Run tests locally: `pnpm run test`
+- Check test output for specific failures
+- Ensure all dependencies are installed
+
+### Coverage Not Showing
+- Coverage is generated automatically during test runs
+- Check that `coverage/lcov.info` files exist in package directories
+- Coverage reports appear in PR comments automatically
+- View detailed coverage reports in the Actions artifacts
+
+## Customization
+
+### Adding New Checks
+Edit the appropriate workflow file and add a new job:
+
+```yaml
+new-check:
+  name: New Check
+  runs-on: ubuntu-latest
+  steps:
+    - uses: actions/checkout@v4
+    # ... your steps
+```
+
+### Changing Node/pnpm Versions
+Update the `env` section in workflow files or individual job steps.
+
+### Extending Deployment
+Add additional deployment targets or steps in `deploy-cloudflare.yml`.
+
+## Branch Protection Setup
+
+To ensure CI checks are enforced, configure branch protection rules:
+
+### For `development` branch:
+1. Go to Settings → Branches → Add rule
+2. Branch name pattern: `development`
+3. Enable:
+   - ✅ Require a pull request before merging
+   - ✅ Require status checks to pass before merging
+   - ✅ Require branches to be up to date before merging
+4. Required status checks:
+   - `lint-and-format`
+   - `type-check`
+   - `test-api`
+   - `test-app`
+   - `build`
+
+### For `main` branch:
+1. Go to Settings → Branches → Add rule
+2. Branch name pattern: `main`
+3. Enable:
+   - ✅ Require a pull request before merging
+   - ✅ Require status checks to pass before merging
+   - ✅ Require branches to be up to date before merging
+   - ✅ Require review from code owners (optional)
+4. Required status checks:
+   - `lint-and-format`
+   - `type-check`
+   - `test-api`
+   - `test-app`
+   - `build`
+
+## Dependabot
+
+Dependabot is configured to:
+- Check for updates monthly
+- Group production and development dependencies separately
+- Create PRs with appropriate labels
+- Use conventional commit messages
+
+PRs created by Dependabot will automatically trigger CI workflows.
+
+## Coverage Reporting
+
+Coverage is automatically generated and reported in several ways:
+
+### In Pull Requests
+- Coverage comments are automatically posted to PRs showing:
+  - Overall coverage percentage
+  - Coverage changes (increase/decrease)
+  - Coverage by package (API vs App)
+- Coverage diff shows what changed in the PR
+
+### Coverage Artifacts
+- Full HTML coverage reports are uploaded as artifacts
+- Download from Actions → Workflow run → Artifacts
+- View detailed line-by-line coverage in your browser
+
+### Coverage Files
+Coverage is generated in multiple formats:
+- `lcov.info` - Used for GitHub integration
+- `coverage-final.json` - JSON format for merging
+- `index.html` - HTML report (in artifacts)
+
+### Viewing Coverage Locally
+```bash
+# Generate coverage for both packages
+pnpm run test:coverage
+
+# View merged coverage report
+open coverage/index.html
+```
+
+### Coverage Thresholds
+- **App:** 60% minimum (lines, branches, functions, statements)
+- **API:** Currently no thresholds (aspirational - will increase over time)
+
+Coverage reporting uses Codecov's GitHub Action, which works automatically for public repositories. For private repositories, you may need to add a `CODECOV_TOKEN` secret.
+
