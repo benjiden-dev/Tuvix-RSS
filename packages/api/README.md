@@ -7,7 +7,7 @@ End-to-end type-safe API backend for TuvixRSS, built with tRPC. This package pro
 This is a **portable API** with 95% shared code between deployment targets:
 
 - **Shared**: Routers, types, validation, business logic, cron handlers
-- **Swappable**: Database driver (better-sqlite3 / D1), storage (filesystem / R2), HTTP adapter (Express / Workers)
+- **Swappable**: Database driver (better-sqlite3 / D1), HTTP adapter (Express / Workers)
 
 ## Features
 
@@ -99,7 +99,6 @@ BETTER_AUTH_SECRET=your-secure-secret-key-here
 
 # Optional (defaults shown)
 DATABASE_PATH=./data/tuvix.db
-STORAGE_PATH=./data/storage
 PORT=3001
 RUNTIME=nodejs
 ```
@@ -142,7 +141,6 @@ pnpm dev:workers
 
 # Uses wrangler dev with:
 # - Local D1 database
-# - Local R2 storage
 # - Cron trigger testing
 ```
 
@@ -166,7 +164,6 @@ pnpm deploy
 
 # Ensure wrangler.toml is configured with:
 # - D1 database binding
-# - R2 bucket binding
 # - BETTER_AUTH_SECRET secret (set via wrangler secret put)
 # - Cron trigger schedule
 ```
@@ -367,7 +364,6 @@ function MyComponent() {
 - Full control
 - No cold starts
 - Larger resource limits
-- Filesystem storage
 
 **Cons:**
 - Server maintenance required
@@ -388,7 +384,7 @@ function MyComponent() {
 **Cons:**
 - 128MB memory limit
 - 30s CPU time limit
-- Requires D1/R2 setup
+- Requires D1 setup
 
 **Best for:** Public hosting, global users, low-maintenance
 

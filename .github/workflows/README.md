@@ -55,6 +55,7 @@ Configure these secrets in your GitHub repository settings:
 ### Cloudflare Secrets
 - `CLOUDFLARE_API_TOKEN` - Cloudflare API token with Workers and Pages permissions
 - `CLOUDFLARE_ACCOUNT_ID` - Your Cloudflare account ID
+- `CLOUDFLARE_D1_DATABASE_ID` - Your D1 database ID (from `wrangler d1 create tuvix`)
 - `CLOUDFLARE_WORKER_NAME` - Name of your Cloudflare Worker (e.g., `tuvix-api`)
 - `CLOUDFLARE_PAGES_PROJECT_NAME` - Name of your Cloudflare Pages project
 - `VITE_API_URL` - API URL for the frontend build (e.g., `https://api.yourdomain.com/trpc`)
@@ -69,10 +70,15 @@ Configure these secrets in your GitHub repository settings:
 2. **Account ID:**
    - Found in Cloudflare Dashboard → Right sidebar under "Account ID"
 
-3. **Worker Name:**
+3. **D1 Database ID:**
+   - Run `npx wrangler d1 create tuvix` locally
+   - Copy the `database_id` from the output
+   - Add it as `CLOUDFLARE_D1_DATABASE_ID` secret in GitHub
+
+4. **Worker Name:**
    - Check `packages/api/wrangler.toml` → `name` field
 
-4. **Pages Project Name:**
+5. **Pages Project Name:**
    - Create a Pages project in Cloudflare Dashboard or use existing name
 
 ## Usage

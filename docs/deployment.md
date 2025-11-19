@@ -38,7 +38,6 @@ Both deployments share the same codebase with runtime-specific adapters.
 |---------|---------------|-------------------|
 | Runtime | Node.js 20+ | Cloudflare Workers |
 | Database | SQLite (better-sqlite3) | D1 (Cloudflare's SQLite) |
-| Storage | Local filesystem | R2 (Cloudflare's S3) |
 | Cron | node-cron | Workers Scheduled Events |
 | Rate Limiting | Disabled | Cloudflare Workers rate limit bindings |
 
@@ -343,30 +342,18 @@ npx wrangler d1 create tuvix
 # binding = "DB"
 # database_name = "tuvix"
 # database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # Copy this ID
-```
-
-#### 1.3. Create Rate Limit Namespaces
-
-```bash
-# Create API rate limit namespace
-npx wrangler rate-limit namespace create "API_RATE_LIMIT"
-
-# Create public feed rate limit namespace
-npx wrangler rate-limit namespace create "FEED_RATE_LIMIT"
-
-# Output will show namespace IDs - copy these
-```
-
-#### 1.4. Create R2 Bucket (Optional)
-
-```bash
-# Create R2 bucket for storage
-npx wrangler r2 bucket create tuvix-storage
+#
+# For local development: Set D1_DATABASE_ID environment variable with this ID
+# For CI/CD: Add this ID as CLOUDFLARE_D1_DATABASE_ID GitHub secret
 ```
 
 ### Step 2: Configure wrangler.toml
 
-Edit `packages/api/wrangler.toml` and add the IDs from Step 1:
+**Note**: 
+- Rate limit `namespace_id` values are user-defined positive integers that you choose yourself (e.g., `"1001"`, `"1002"`). They don't need to be created via CLI or dashboard.
+- The `database_id` uses environment variable substitution (`${D1_DATABASE_ID}`). Set this environment variable for local development.
+
+The `wrangler.toml` file is already configured with environment variable placeholders:
 
 ```toml
 # ============================================================================
@@ -385,28 +372,24 @@ compatibility_date = "2024-11-10"
 compatibility_flags = ["nodejs_als"]
 
 # D1 Database binding
+# Uses environment variable substitution - set D1_DATABASE_ID env var
 [[d1_databases]]
 binding = "DB"
 database_name = "tuvix"
-database_id = "your-database-id-here"  # From step 1.2
-
-# R2 Storage binding
-[[r2_buckets]]
-binding = "R2_BUCKET"
-bucket_name = "tuvix-storage"
+database_id = "${D1_DATABASE_ID}"  # Environment variable
 
 # Rate Limit Bindings
+# namespace_id: A positive integer you define, unique to your Cloudflare account
+# You choose these IDs yourself - they don't need to be created elsewhere
 [[ratelimits]]
-binding = "API_RATE_LIMIT"
-namespace_id = "your-api-namespace-id-here"  # From step 1.3
-limit = 10000  # High limit - actual limits enforced per user
-period = 60    # 60 seconds
+name = "API_RATE_LIMIT"
+namespace_id = "1001"  # User-defined identifier - choose any unique positive integer
+simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user
 
 [[ratelimits]]
-binding = "FEED_RATE_LIMIT"
-namespace_id = "your-feed-namespace-id-here"  # From step 1.3
-limit = 10000
-period = 60
+name = "FEED_RATE_LIMIT"
+namespace_id = "1002"  # User-defined identifier - choose any unique positive integer
+simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user
 
 # Environment variables
 [vars]
@@ -418,10 +401,21 @@ crons = ["*/5 * * * *"]
 ```
 
 **Security Notes**:
-- ✅ **Safe to commit**: Empty IDs, structure, names, bindings
-- ❌ **Never commit**: Filled-in `database_id` or namespace IDs (account-specific)
-- 🔒 **Use secrets**: Sensitive values via `wrangler secret put`
-- 📝 **Local overrides**: Use `wrangler.toml.local` (gitignored)
+- ✅ **Safe to commit**: Environment variable placeholders (e.g., `${D1_DATABASE_ID}`), structure, names, bindings
+- ❌ **Never commit**: Filled-in `database_id` values (account-specific)
+- 🔒 **Use secrets**: 
+  - For CI/CD: Set `CLOUDFLARE_D1_DATABASE_ID` GitHub secret
+  - For local dev: Set `D1_DATABASE_ID` environment variable (or use `wrangler.toml.local` to override)
+  - Other secrets: Use `wrangler secret put`
+
+**Local Development Setup:**
+```bash
+# Set environment variable (recommended)
+export D1_DATABASE_ID="your-database-id-from-step-1.2"
+
+# Or create wrangler.toml.local to override values (optional)
+# This file is gitignored and will override wrangler.toml
+```
 
 ### Step 3: Set Secrets
 
@@ -780,15 +774,12 @@ pnpm run db:migrate:d1
 **Symptom**: Worker errors about rate limit bindings
 
 **Solution**:
-```bash
-# Verify namespaces exist
-npx wrangler rate-limit namespace list
-
-# Recreate if needed
-npx wrangler rate-limit namespace create "API_RATE_LIMIT"
-npx wrangler rate-limit namespace create "FEED_RATE_LIMIT"
-# Update namespace IDs in wrangler.toml
-```
+- Verify `wrangler.toml` has correct format:
+  - Uses `name` (not `binding`)
+  - Uses `namespace_id` as a string integer (e.g., `"1001"`)
+  - Uses `simple` object with `limit` and `period`
+- Ensure `namespace_id` values are unique positive integers
+- Check that bindings match the names used in code (`API_RATE_LIMIT`, `FEED_RATE_LIMIT`)
 
 ---
 
@@ -812,7 +803,6 @@ These apply to both deployments:
 |----------|----------|---------|-------------|
 | `DATABASE_PATH` | No | ./data/tuvix.db | Path to SQLite database |
 | `PORT` | No | 3001 | API server port |
-| `STORAGE_PATH` | No | ./data/storage | File storage path |
 
 ### Cloudflare-Only Variables
 
@@ -821,7 +811,6 @@ These apply to both deployments:
 | Binding | Type | Description |
 |---------|------|-------------|
 | `DB` | D1 | Database binding |
-| `R2_BUCKET` | R2 | Storage bucket binding |
 | `API_RATE_LIMIT` | RateLimit | API rate limiting binding |
 | `FEED_RATE_LIMIT` | RateLimit | Public feed rate limiting binding |
 
@@ -1119,15 +1108,16 @@ npx wrangler d1 migrations apply tuvix --remote
 
 #### Workers: Rate Limit Namespaces Not Found
 
-```bash
-# Verify rate limit namespaces
-npx wrangler rate-limit namespace list
-
-# Recreate if needed
-npx wrangler rate-limit namespace create "API_RATE_LIMIT"
-npx wrangler rate-limit namespace create "FEED_RATE_LIMIT"
-# Update namespace IDs in wrangler.toml
-```
+**Solution**:
+- Verify `wrangler.toml` configuration format:
+  ```toml
+  [[ratelimits]]
+  name = "API_RATE_LIMIT"
+  namespace_id = "1001"  # User-defined positive integer
+  simple = { limit = 10000, period = 60 }
+  ```
+- Ensure `namespace_id` values are unique positive integers (you choose these yourself)
+- Check that binding names match code (`API_RATE_LIMIT`, `FEED_RATE_LIMIT`)
 
 ### Logs
 

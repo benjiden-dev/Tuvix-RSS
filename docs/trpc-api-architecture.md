@@ -722,19 +722,17 @@ name = "tuvix-api"
 
 [[env.production.d1_databases]]
 binding = "DB"
-database_id = "your-d1-id"
+database_id = "${D1_DATABASE_ID}"  # Environment variable
 
 [[env.production.ratelimits]]
-binding = "API_RATE_LIMIT"
-namespace_id = "your-api-namespace-id"
-limit = 10000
-period = 60
+name = "API_RATE_LIMIT"
+namespace_id = "1001"
+simple = { limit = 10000, period = 60 }
 
 [[env.production.ratelimits]]
-binding = "FEED_RATE_LIMIT"
-namespace_id = "your-feed-namespace-id"
-limit = 10000
-period = 60
+name = "FEED_RATE_LIMIT"
+namespace_id = "1002"
+simple = { limit = 10000, period = 60 }
 ```
 
 #### Environment Variables
@@ -794,7 +792,6 @@ type Env = {
   FEED_RATE_LIMIT?: RateLimit
 
   // Optional services
-  R2_BUCKET?: R2Bucket
   RESEND_API_KEY?: string
   BASE_URL?: string
 }

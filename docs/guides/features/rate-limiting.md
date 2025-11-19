@@ -105,35 +105,27 @@ type RateLimitType = "api" | "publicFeed";
 
 ### Cloudflare Workers Setup
 
-#### Step 1: Create Rate Limit Namespaces
+#### Step 1: Update wrangler.toml
 
-```bash
-# Create rate limit namespaces for API and public feed rate limiting
-wrangler rate-limit namespace create "API_RATE_LIMIT"
-wrangler rate-limit namespace create "FEED_RATE_LIMIT"
-
-# Output will include namespace IDs - save these for step 2
-```
-
-#### Step 2: Update wrangler.toml
+**Note**: Rate limit `namespace_id` values are user-defined positive integers that you choose yourself (e.g., `"1001"`, `"1002"`). They don't need to be created via CLI or dashboard - you simply assign unique integer IDs in your `wrangler.toml` configuration.
 
 ```toml
 # Rate Limit Bindings for API and Public Feed rate limiting
 # Uses Cloudflare Workers rate limit bindings
+# namespace_id: A positive integer you define, unique to your Cloudflare account
+# You choose these IDs yourself - they don't need to be created elsewhere
 [[ratelimits]]
-binding = "API_RATE_LIMIT"
-namespace_id = "xyz789..."  # Use the namespace ID from step 1
-limit = 10000  # High limit - actual limits enforced per user via getUserLimits()
-period = 60    # 60 seconds (1 minute)
+name = "API_RATE_LIMIT"
+namespace_id = "1001"  # User-defined identifier - choose any unique positive integer
+simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user via getUserLimits()
 
 [[ratelimits]]
-binding = "FEED_RATE_LIMIT"
-namespace_id = "def456..."  # Use the namespace ID from step 1
-limit = 10000  # High limit - actual limits enforced per user via getUserLimits()
-period = 60    # 60 seconds (1 minute)
+name = "FEED_RATE_LIMIT"
+namespace_id = "1002"  # User-defined identifier - choose any unique positive integer
+simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user via getUserLimits()
 ```
 
-#### Step 3: Deploy
+#### Step 2: Deploy
 
 ```bash
 # Deploy to Cloudflare
@@ -263,8 +255,11 @@ Users can view their rate limits:
 
 **Solutions**:
 1. **Check deployment type**: Rate limiting only works on Cloudflare Workers, not Docker Compose
-2. **Verify bindings**: Ensure `API_RATE_LIMIT` and `FEED_RATE_LIMIT` are configured in `wrangler.toml`
-3. **Check namespace IDs**: Ensure namespace IDs are correct in `wrangler.toml`
+2. **Verify bindings**: Ensure `API_RATE_LIMIT` and `FEED_RATE_LIMIT` are configured in `wrangler.toml` with correct format:
+   - Uses `name` (not `binding`)
+   - Uses `namespace_id` as a string integer (e.g., `"1001"`)
+   - Uses `simple` object with `limit` and `period`
+3. **Check namespace IDs**: Ensure `namespace_id` values are unique positive integers (you choose these yourself)
 4. **Check logs**: Look for warnings about missing bindings in worker logs
 
 ### Rate Limits Too Strict

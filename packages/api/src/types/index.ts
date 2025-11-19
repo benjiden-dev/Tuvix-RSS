@@ -115,9 +115,6 @@ export interface Env {
   }; // Cloudflare Workers rate limit binding for public feed requests
   SKIP_RATE_LIMIT?: string; // "true" or "false" - skip rate limiting (for tests)
 
-  // Storage
-  R2_BUCKET?: R2Bucket; // Cloudflare R2
-
   // Optional Services
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;

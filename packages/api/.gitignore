@@ -37,6 +37,7 @@ Thumbs.db
 # Wrangler
 .wrangler/
 .dev.vars
+wrangler.toml.local
 
 # Drizzle (keep migration files, ignore meta snapshots if desired)
 # drizzle/meta/
