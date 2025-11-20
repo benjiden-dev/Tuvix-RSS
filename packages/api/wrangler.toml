@@ -30,6 +30,13 @@ binding = "DB"
 database_name = "tuvix"
 database_id = "${D1_DATABASE_ID}" # Substituted by envsubst in CI/CD, or override in wrangler.toml.local for local dev
 
+# Custom Domain Routes (Optional)
+# Only needed if routing traffic from a Cloudflare zone to this Worker
+# For custom domains, use: npx wrangler domains add api.yourdomain.com
+# [[routes]]
+# pattern = "api.yourdomain.com/*"
+# zone_name = "yourdomain.com"
+
 # Rate Limit Bindings for API and Public Feed rate limiting
 # Uses Cloudflare Workers rate limit bindings
 # Each binding defines a limit and period (10s or 60s)

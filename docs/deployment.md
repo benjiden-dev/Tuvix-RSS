@@ -6,18 +6,14 @@ This guide covers development and release processes for both Docker Compose and 
 
 - [Overview](#overview)
 - [Docker Compose Deployment](#docker-compose-deployment)
-- [Cloudflare Deployment (Workers + Pages)](#cloudflare-deployment-workers--pages)
-  - [API Setup (Cloudflare Workers)](#api-setup-cloudflare-workers)
-  - [Frontend Setup (Cloudflare Pages)](#frontend-setup-cloudflare-pages)
-  - [Cross-Subdomain Configuration](#cross-subdomain-configuration)
-  - [Development Workflow](#development-workflow)
-  - [Production Deployment Workflow](#production-deployment-workflow)
-  - [Cloudflare Configuration](#cloudflare-configuration)
-  - [Monitoring & Troubleshooting](#monitoring--troubleshooting)
-- [Environment Configuration](#environment-configuration)
-- [Scheduled Tasks (Cron)](#scheduled-tasks-cron)
-- [Database Migrations](#database-migrations)
-- [Monitoring & Health Checks](#monitoring--health-checks)
+- [Cloudflare Deployment](#cloudflare-deployment)
+- [Shared Topics](#shared-topics)
+  - [Environment Variables](#environment-variables)
+  - [Database Migrations](#database-migrations)
+  - [Scheduled Tasks (Cron)](#scheduled-tasks-cron)
+- [CI/CD Integration](#cicd-integration)
+- [Security Checklist](#security-checklist)
+- [Performance Optimization](#performance-optimization)
 
 ---
 
@@ -27,10 +23,15 @@ TuvixRSS supports two deployment targets:
 
 1. **Docker Compose** - Traditional container-based deployment with Node.js runtime
 2. **Cloudflare** - Serverless edge deployment:
-   - **API**: Cloudflare Workers (serverless edge runtime)
-   - **Frontend**: Cloudflare Pages (static site hosting)
+   - **API**: Cloudflare Workers (serverless edge runtime) - typically deployed to `api.example.com`
+   - **Frontend**: Cloudflare Pages (static site hosting) - typically deployed to `feed.example.com`
 
 Both deployments share the same codebase with runtime-specific adapters.
+
+**Example Domain Structure:**
+- `example.com` - Static blog (optional, separate from TuvixRSS)
+- `feed.example.com` - Frontend Pages app (TuvixRSS UI)
+- `api.example.com` - Worker API (TuvixRSS backend)
 
 ### Architecture Differences
 
@@ -40,6 +41,17 @@ Both deployments share the same codebase with runtime-specific adapters.
 | Database | SQLite (better-sqlite3) | D1 (Cloudflare's SQLite) |
 | Cron | node-cron | Workers Scheduled Events |
 | Rate Limiting | Disabled | Cloudflare Workers rate limit bindings |
+
+### Authentication
+
+TuvixRSS uses **Better Auth** for authentication, which manages user sessions via HTTP-only cookies. The `BETTER_AUTH_SECRET` environment variable (minimum 32 characters) is used to sign and verify session cookies securely. No JWT tokens are used.
+
+**Local Development**: Better Auth works perfectly with localhost setups:
+- Frontend and API can run on different ports (e.g., `localhost:5173` and `localhost:3001`)
+- Cookies are automatically handled (localhost domain works for both ports)
+- CORS is configured with `credentials: true` to allow cookies
+
+**Cross-Subdomain**: If your frontend and API are on different subdomains (e.g., `feed.example.com` and `api.example.com`), configure the `COOKIE_DOMAIN` secret to the root domain (e.g., `example.com`) to enable cross-subdomain cookies.
 
 ---
 
@@ -51,7 +63,7 @@ Both deployments share the same codebase with runtime-specific adapters.
 - Docker Compose 2.0+
 - Git
 
-### Development Process
+### Development Setup
 
 #### 1. Initial Setup
 
@@ -73,21 +85,12 @@ vim .env
 **Required Environment Variables:**
 
 ```env
-BETTER_AUTH_SECRET=your-generated-secret-here  # Min 32 chars, for Better Auth session management
+BETTER_AUTH_SECRET=your-generated-secret-here  # Min 32 chars
 CORS_ORIGIN=http://localhost:5173
 DATABASE_PATH=/app/data/tuvix.db
 PORT=3001
 NODE_ENV=production
 ```
-
-**Note**: Better Auth uses HTTP-only cookies for session management (more secure than JWT tokens). The `BETTER_AUTH_SECRET` is used to sign and verify session cookies.
-
-**Local Development**: Better Auth works perfectly with Docker Compose localhost setup:
-- Frontend on `http://localhost:5173` (from host)
-- API on `http://localhost:3001` (from host)
-- Cookies are automatically handled (localhost domain works for both ports)
-- CORS is configured with `credentials: true` to allow cookies
-- Frontend client points to API URL (`VITE_API_URL=http://localhost:3001/trpc`)
 
 #### 2. Build and Run
 
@@ -106,14 +109,13 @@ pnpm run docker:down
 ```
 
 **Services:**
-
 - `api` - tRPC API server (port 3001)
   - Health check: http://localhost:3001/health
   - tRPC endpoint: http://localhost:3001/trpc
 - `app` - React frontend (port 5173)
   - Health check: http://localhost:5173/health
 
-#### 3. Local Development
+#### 3. Local Development (Without Docker)
 
 For active development without Docker:
 
@@ -146,21 +148,9 @@ pnpm run type-check
 
 # Linting
 pnpm run lint
-```
 
-#### 5. Pre-Release Checklist
-
-Before deploying to production:
-
-```bash
-# Run full pre-check
+# Pre-release checks
 pnpm run pre-check
-
-# This runs:
-# - Linting (API + App)
-# - Formatting checks
-# - Type checking
-# - Production build
 ```
 
 ### Production Deployment
@@ -181,8 +171,8 @@ vim .env
 
 ```env
 # SECURITY: Use strong secrets in production
-BETTER_AUTH_SECRET=<generate-with-openssl-rand-base64-32>  # Min 32 chars for Better Auth
-CORS_ORIGIN=https://yourdomain.com
+BETTER_AUTH_SECRET=<generate-with-openssl-rand-base64-32>  # Min 32 chars
+CORS_ORIGIN=https://feed.example.com  # Frontend URL (or multiple origins comma-separated)
 DATABASE_PATH=/app/data/tuvix.db
 PORT=3001
 NODE_ENV=production
@@ -190,8 +180,6 @@ NODE_ENV=production
 # Optional: Customize fetch behavior
 FETCH_INTERVAL_MINUTES=60  # How often to fetch RSS feeds
 ```
-
-**Better Auth Sessions**: Better Auth manages user sessions via HTTP-only cookies. No JWT tokens are used. The `BETTER_AUTH_SECRET` is used to sign session cookies securely.
 
 #### 2. Deploy
 
@@ -232,7 +220,7 @@ docker compose up -d
 # Database migrations run automatically on startup
 ```
 
-### Docker Configuration
+### Configuration
 
 #### Dockerfile Structure
 
@@ -282,13 +270,65 @@ services:
         condition: service_healthy
 ```
 
+### Monitoring & Troubleshooting
+
+#### Health Checks
+
+```bash
+# Check container health
+docker compose ps
+docker inspect tuvix-api | grep -A 5 Health
+
+# Health check endpoints
+curl http://localhost:3001/health
+# Response: {"status":"ok","runtime":"nodejs"}
+
+curl http://localhost:5173/health
+# Response: ok
+```
+
+#### View Logs
+
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f api
+
+# Last 100 lines
+docker compose logs --tail=100 api
+
+# Filter cron logs
+docker compose logs -f api | grep "RSS fetch\|Prune"
+```
+
+#### Common Issues
+
+**Port Already in Use:**
+```bash
+# Check what's using the port
+lsof -i :3001
+
+# Change port in .env
+PORT=3002
+```
+
+**Database Locked:**
+```bash
+# Stop all containers
+docker compose down
+
+# Remove stale lock
+rm -f ./data/tuvix.db-shm ./data/tuvix.db-wal
+
+# Restart
+docker compose up -d
+```
+
 ---
 
-## Cloudflare Deployment (Workers + Pages)
-
-TuvixRSS deploys to Cloudflare with:
-- **API**: Cloudflare Workers (serverless edge runtime)
-- **Frontend**: Cloudflare Pages (static site hosting)
+## Cloudflare Deployment
 
 ### Prerequisites
 
@@ -312,22 +352,16 @@ cd packages/app
 # Follow "Frontend Setup" section below
 ```
 
----
+### API Setup (Cloudflare Workers)
 
-## API Setup (Cloudflare Workers)
+#### Step 1: Create Cloudflare Resources
 
-### Step 1: Create Cloudflare Resources
-
-#### 1.1. Authenticate with Cloudflare
-
+**Authenticate:**
 ```bash
 npx wrangler login
 ```
 
-This opens your browser to authenticate with Cloudflare.
-
-#### 1.2. Create D1 Database
-
+**Create D1 Database:**
 ```bash
 cd packages/api
 
@@ -336,78 +370,50 @@ npx wrangler d1 create tuvix
 
 # Output will show:
 # ✅ Successfully created DB 'tuvix'!
-# Created your database using D1's new storage backend. The storage backend
-# migrates automatically based on your usage.
-# [[d1_databases]]
-# binding = "DB"
-# database_name = "tuvix"
 # database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # Copy this ID
 #
-# For local development: Set D1_DATABASE_ID environment variable with this ID
+# For local development: Create wrangler.toml.local with this ID
 # For CI/CD: Add this ID as D1_DATABASE_ID GitHub secret
 ```
 
-### Step 2: Configure wrangler.toml
-
-**Note**: 
-- Rate limit `namespace_id` values are user-defined positive integers that you choose yourself (e.g., `"1001"`, `"1002"`). They don't need to be created via CLI or dashboard.
-- The `database_id` uses `${D1_DATABASE_ID}` placeholder syntax. For local dev, use `wrangler.toml.local`. For CI/CD, envsubst automatically substitutes it from GitHub secrets.
+#### Step 2: Configure wrangler.toml
 
 The `wrangler.toml` file is already configured with environment variable placeholders:
 
 ```toml
-# ============================================================================
-# Cloudflare Workers Configuration
-# ============================================================================
-# IMPORTANT: This file is safe to commit with empty IDs.
-# DO NOT commit filled-in database_id or namespace IDs - they are account-specific.
-# Use wrangler.toml.local for local overrides if needed.
-# ============================================================================
-
 name = "tuvix-api"
 main = "src/adapters/cloudflare.ts"
 compatibility_date = "2024-11-10"
-
-# Sentry requires AsyncLocalStorage
 compatibility_flags = ["nodejs_als"]
 
 # D1 Database binding
-# For local dev: Create wrangler.toml.local with your actual database_id
-# For CI/CD: envsubst substitutes ${D1_DATABASE_ID} before deployment
 [[d1_databases]]
 binding = "DB"
 database_name = "tuvix"
-database_id = "${D1_DATABASE_ID}"  # Substituted by envsubst in CI/CD, or override in wrangler.toml.local
+database_id = "${D1_DATABASE_ID}"  # Substituted by envsubst in CI/CD
 
 # Rate Limit Bindings
-# namespace_id: A positive integer you define, unique to your Cloudflare account
-# You choose these IDs yourself - they don't need to be created elsewhere
 [[ratelimits]]
 name = "API_RATE_LIMIT"
-namespace_id = "1001"  # User-defined identifier - choose any unique positive integer
-simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user
+namespace_id = "1001"  # User-defined positive integer
+simple = { limit = 10000, period = 60 }
 
 [[ratelimits]]
 name = "FEED_RATE_LIMIT"
-namespace_id = "1002"  # User-defined identifier - choose any unique positive integer
-simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user
+namespace_id = "1002"  # User-defined positive integer
+simple = { limit = 10000, period = 60 }
 
-# Environment variables
 [vars]
 RUNTIME = "cloudflare"
 
-# Cron trigger - every 5 minutes
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/5 * * * *"]  # Every 5 minutes
 ```
 
-**Security Notes**:
-- ✅ **Safe to commit**: Environment variable placeholders (e.g., `${D1_DATABASE_ID}`), structure, names, bindings
+**Security Notes:**
+- ✅ **Safe to commit**: Environment variable placeholders, structure, names, bindings
 - ❌ **Never commit**: Filled-in `database_id` values (account-specific)
-- 🔒 **Use GitHub Secrets** (not Variables) for sensitive data:
-  - For CI/CD: Set `D1_DATABASE_ID` as a GitHub **Secret** (encrypted, masked in logs)
-  - For local dev: Create `wrangler.toml.local` with your actual database_id
-  - Other secrets: Use `wrangler secret put` for Cloudflare Worker secrets
+- 🔒 **Use GitHub Secrets** (not Variables) for sensitive data
 
 **Local Development Setup:**
 
@@ -423,54 +429,43 @@ cp wrangler.toml.local.example wrangler.toml.local
 # Example: database_id = "7078240d-69e3-46fb-bb21-aa8e5208de9b"
 ```
 
-**Note:** `wrangler.toml.local` is gitignored and will override values in `wrangler.toml`. This is the recommended approach for local development.
+**Note:** `wrangler.toml.local` is gitignored and will override values in `wrangler.toml`.
 
 **CI/CD Setup:**
 
-The GitHub Actions workflow automatically substitutes `${D1_DATABASE_ID}` in `wrangler.toml` before deployment using `envsubst` (available on Ubuntu runners). 
+The GitHub Actions workflow automatically substitutes `${D1_DATABASE_ID}` in `wrangler.toml` before deployment using `envsubst`.
 
 **To configure:**
-
 1. Go to your GitHub repository → Settings → Secrets and variables → Actions
-2. Click the **"Secrets"** tab (not "Variables" - we use Secrets for sensitive data)
+2. Click the **"Secrets"** tab (not "Variables")
 3. Click "New repository secret"
 4. Name: `D1_DATABASE_ID` (must match exactly)
 5. Value: Your D1 database ID (from `wrangler d1 create tuvix`)
 6. Click "Add secret"
 
 **Why Secrets instead of Variables?**
-- **Secrets** are encrypted and masked in logs (use for sensitive data like database IDs, API keys)
+- **Secrets** are encrypted and masked in logs (use for sensitive data)
 - **Variables** are plain text and visible in logs (use for non-sensitive configuration)
 
-The workflow automatically:
-- Reads the `D1_DATABASE_ID` **secret** from GitHub (via `${{ secrets.D1_DATABASE_ID }}`)
-- Sets it as an environment variable in the step's `env` block for use by `envsubst`
-- Substitutes `${D1_DATABASE_ID}` in `wrangler.toml` before deployment
-- Verifies the secret is set and substitution succeeded
-- Never logs or leaks the secret value (secrets are automatically masked)
+#### Step 3: Set Secrets
 
-No additional configuration needed once the secret is set.
-
-### Step 3: Set Secrets
-
-Set required secrets:
+**Required Secrets:**
 
 ```bash
-# Make sure you're in the packages/api directory
 cd packages/api
 
-# Required: Better Auth secret (min 32 chars)
+# Better Auth secret (min 32 chars)
 npx wrangler secret put BETTER_AUTH_SECRET
 # Generate with: openssl rand -base64 32
-# This will prompt you to enter the secret value
 
-# Required: CORS origin (frontend URL)
+# CORS origin (frontend URL) - Set BEFORE deploying API
 npx wrangler secret put CORS_ORIGIN
-# Enter: https://your-pages-project.pages.dev
-# Or: https://yourdomain.com,https://www.yourdomain.com
+# Enter: https://feed.example.com (if using custom domain)
+# Or: https://your-pages-project.pages.dev (if using Pages default)
+# Multiple origins: https://feed.example.com,https://your-pages-project.pages.dev
 ```
 
-**Optional Secrets**:
+**Optional Secrets:**
 
 ```bash
 # Email service (Resend)
@@ -481,7 +476,7 @@ npx wrangler secret put BASE_URL
 
 # Cross-subdomain cookies (if frontend/API on different subdomains)
 npx wrangler secret put COOKIE_DOMAIN
-# Enter: example.com  (root domain, not subdomain)
+# Enter: example.com  (root domain, not subdomain like api.example.com)
 
 # Admin initialization (first deployment only)
 npx wrangler secret put ADMIN_USERNAME
@@ -489,12 +484,14 @@ npx wrangler secret put ADMIN_PASSWORD
 npx wrangler secret put ADMIN_EMAIL
 ```
 
-### Step 4: Database Migrations
+#### Step 4: Database Migrations
+
+**Note:** For first deployment, run migrations BEFORE deploying. For subsequent deployments, migrations can run before or after deployment (CI/CD runs them after deployment).
 
 ```bash
 cd packages/api
 
-# Generate migrations from schema changes
+# Generate migrations from schema changes (if schema was modified)
 pnpm run db:generate
 
 # Apply migrations to production D1
@@ -505,7 +502,7 @@ npx wrangler d1 execute tuvix --remote \
   --command "SELECT name FROM sqlite_master WHERE type='table';"
 ```
 
-### Step 5: Deploy API
+#### Step 5: Deploy API
 
 ```bash
 cd packages/api
@@ -523,7 +520,7 @@ pnpm run deploy
 npx wrangler tail
 ```
 
-### Step 6: Initialize Admin User (First Deployment)
+#### Step 6: Initialize Admin User (First Deployment)
 
 After first deployment:
 
@@ -532,32 +529,37 @@ After first deployment:
 curl -X POST https://your-worker.workers.dev/_admin/init
 
 # Or if using custom domain:
-curl -X POST https://api.yourdomain.com/_admin/init
+curl -X POST https://api.example.com/_admin/init
+```
+
+**Example:**
+```bash
+curl -X POST https://api.tuvix.app/_admin/init
 ```
 
 **Note**: Admin initialization creates a user in Better Auth's `user` table. You can then log in using Better Auth's `/api/auth/sign-in/username` endpoint.
 
----
+### Frontend Setup (Cloudflare Pages)
 
-## Frontend Setup (Cloudflare Pages)
+#### Step 1: Create Pages Project
 
-### Step 1: Create Pages Project
-
-#### Option A: Via Wrangler CLI (Recommended)
+**Option A: Via Wrangler CLI (Recommended)**
 
 ```bash
+# Create the Pages project (first time only)
+npx wrangler pages project create tuvix-app
+
+# Build and deploy
 cd packages/app
-
-# Build the app
-export VITE_API_URL=https://your-worker.workers.dev/trpc
-# Or: export VITE_API_URL=https://api.yourdomain.com/trpc
+export VITE_API_URL=https://api.example.com/trpc
+# Or if not using custom domain: https://your-worker.workers.dev/trpc
 pnpm run build
-
-# Deploy to Pages
 npx wrangler pages deploy dist --project-name=tuvix-app
 ```
 
-#### Option B: Via Cloudflare Dashboard
+**Note:** The project name (`tuvix-app` in this example) must match the `CLOUDFLARE_PAGES_PROJECT_NAME` GitHub secret used in CI/CD. This is the internal Cloudflare project name, not your custom domain.
+
+**Option B: Via Cloudflare Dashboard**
 
 1. Go to [Cloudflare Dashboard → Pages](https://dash.cloudflare.com/pages)
 2. Click **"Create a project"**
@@ -568,189 +570,122 @@ npx wrangler pages deploy dist --project-name=tuvix-app
    - **Root directory**: `/` (project root)
 5. Add environment variable:
    - **Variable**: `VITE_API_URL`
-   - **Value**: `https://your-worker.workers.dev/trpc` (or your custom domain)
+   - **Value**: `https://api.example.com/trpc` (or `https://your-worker.workers.dev/trpc` if not using custom domain)
 
-### Step 2: Configure CORS
-
-Ensure your Worker's `CORS_ORIGIN` secret includes your Pages URL:
-
-```bash
-# If Pages is at https://tuvix-app.pages.dev
-npx wrangler secret put CORS_ORIGIN
-# Enter: https://tuvix-app.pages.dev
-
-# If using custom domain
-npx wrangler secret put CORS_ORIGIN
-# Enter: https://yourdomain.com,https://tuvix-app.pages.dev
-```
-
-### Step 3: Configure Custom Domain (Optional)
+#### Step 2: Configure Custom Domain (Optional)
 
 1. In Cloudflare Dashboard → Pages → Your Project → **Custom domains**
 2. Click **"Set up a custom domain"**
-3. Enter your domain (e.g., `app.yourdomain.com`)
+3. Enter your domain (e.g., `feed.example.com`)
 4. Cloudflare will automatically configure DNS
 
-**Update CORS**:
+**Update CORS:** After adding a custom domain, update the `CORS_ORIGIN` secret in your Worker to include the frontend URL:
+
 ```bash
 npx wrangler secret put CORS_ORIGIN
-# Enter: https://app.yourdomain.com,https://yourdomain.com
+# Enter: https://feed.example.com
 ```
 
----
+**Example:** For `feed.tuvix.app`, set CORS_ORIGIN to `https://feed.tuvix.app`
 
-## Cross-Subdomain Configuration
+### Cross-Subdomain Configuration
 
-If your frontend and API are on different subdomains (e.g., `app.example.com` and `api.example.com`), configure cross-subdomain cookies:
+**When to configure:** After both API and Frontend are deployed and working.
 
-### When You Need This
+If your frontend and API are on different subdomains (e.g., `feed.example.com` and `api.example.com`), configure cross-subdomain cookies:
 
-- ✅ Frontend on `app.example.com`, API on `api.example.com`
+**When You Need This:**
+- ✅ Frontend on `feed.example.com`, API on `api.example.com`
 - ✅ Frontend on `www.example.com`, API on `api.example.com`
-- ❌ Both on same domain (e.g., `example.com/app` and `example.com/api`)
-- ❌ Both on same subdomain (e.g., `app.example.com` and `app.example.com/api`)
+- ❌ Both on same domain (e.g., `example.com/feed` and `example.com/api`)
+- ❌ Both on same subdomain (e.g., `feed.example.com/feed` and `feed.example.com/api`)
 
-### Configuration
+**Configuration:**
 
 ```bash
 # Set cookie domain to root domain (not subdomain)
 npx wrangler secret put COOKIE_DOMAIN
-# Enter: example.com  (NOT api.example.com or app.example.com)
+# Enter: example.com  (NOT api.example.com or feed.example.com)
 ```
+
+**Example:** For `feed.tuvix.app` and `api.tuvix.app`, set COOKIE_DOMAIN to `tuvix.app`
 
 **Security Note**: Setting `COOKIE_DOMAIN` makes cookies accessible across all subdomains. Only enable if necessary and ensure all subdomains are trusted.
 
----
+### Development Workflow
 
-## Development Workflow
-
-### Local Development
-
-#### API (Workers)
+**Local Development:**
 
 ```bash
+# API (Workers)
 cd packages/api
-
-# Start local Workers development server
 pnpm run dev:workers
+# Starts: Local Workers runtime (Miniflare), Local D1 database, Auto-reload
 
-# This starts:
-# - Local Workers runtime (Miniflare)
-# - Local D1 database
-# - Auto-reload on file changes
-```
-
-#### Frontend
-
-```bash
+# Frontend
 cd packages/app
-
-# Start Vite dev server
 pnpm run dev
-
 # Frontend runs on http://localhost:5173
 # Points to API at VITE_API_URL (default: http://localhost:3001/trpc)
+
+# Testing
+pnpm run test
+npx wrangler dev  # Test Workers locally
+npx wrangler dev --test-scheduled  # Test cron trigger locally
 ```
 
-### Testing
+**Production Deployment:**
 
 ```bash
-# Run tests (uses Node.js runtime)
+# Pre-Deployment
+pnpm run type-check
 pnpm run test
 
-# Test Workers locally
+# Deploy API
 cd packages/api
-npx wrangler dev
+pnpm run db:migrate:d1  # Run migrations
+pnpm run build
+pnpm run deploy
 
-# Test cron trigger locally
-npx wrangler dev --test-scheduled
+# Deploy Frontend
+cd packages/app
+export VITE_API_URL=https://api.example.com/trpc
+pnpm run build
+npx wrangler pages deploy dist --project-name=tuvix-app
+
+# Verify
+curl https://api.example.com/health
+curl https://feed.example.com/health
 ```
 
----
+### Configuration
 
-## Production Deployment Workflow
-
-### Complete Deployment Checklist
-
-1. **Pre-Deployment**:
-   ```bash
-   # From project root
-   pnpm run type-check
-   pnpm run test
-   ```
-
-2. **Deploy API**:
-   ```bash
-   cd packages/api
-   pnpm run db:migrate:d1  # Run migrations
-   pnpm run build
-   pnpm run deploy
-   ```
-
-3. **Deploy Frontend**:
-   ```bash
-   cd packages/app
-   export VITE_API_URL=https://your-worker.workers.dev/trpc
-   pnpm run build
-   npx wrangler pages deploy dist --project-name=tuvix-app
-   ```
-
-4. **Verify**:
-   ```bash
-   # Check API health
-   curl https://your-worker.workers.dev/health
-
-   # Check frontend
-   curl https://tuvix-app.pages.dev/health
-   ```
-
----
-
-## Cloudflare Configuration
-
-### Worker Settings
-
-Recommended settings in Cloudflare Dashboard → Workers → Your Worker → Settings:
-
+**Worker Settings** (Cloudflare Dashboard → Workers → Your Worker → Settings):
 - **CPU Limit**: 50ms (sufficient for most operations)
 - **Memory**: 128MB
 - **Cron Triggers**: Configured via `wrangler.toml` (`*/5 * * * *`)
 
-### Pages Settings
-
-Recommended settings in Cloudflare Dashboard → Pages → Your Project → Settings:
-
+**Pages Settings** (Cloudflare Dashboard → Pages → Your Project → Settings):
 - **Build command**: `cd packages/app && pnpm install && pnpm build`
 - **Build output directory**: `packages/app/dist`
 - **Environment variables**: `VITE_API_URL` (set to your Worker URL)
 
-### Custom Domains
-
-#### Worker Custom Domain
+**Custom Domains:**
 
 ```bash
 # Add custom domain to Worker
-npx wrangler domains add api.yourdomain.com
+npx wrangler domains add api.example.com
 
-# Update CORS_ORIGIN secret
+# Update CORS_ORIGIN secret to include frontend domain
 npx wrangler secret put CORS_ORIGIN
-# Enter: https://yourdomain.com,https://www.yourdomain.com
+# Enter: https://feed.example.com
 ```
 
-#### Pages Custom Domain
+**Example:** `npx wrangler domains add api.tuvix.app`
 
-1. Cloudflare Dashboard → Pages → Your Project → **Custom domains**
-2. Click **"Set up a custom domain"**
-3. Enter domain (e.g., `app.yourdomain.com`)
-4. DNS is configured automatically
+### Monitoring & Troubleshooting
 
-**Important**: After adding custom domains, update the `CORS_ORIGIN` secret in your Worker to include all frontend URLs.
-
----
-
-## Monitoring & Troubleshooting
-
-### View Logs
+#### View Logs
 
 ```bash
 # API (Workers) logs
@@ -762,56 +697,59 @@ npx wrangler tail --status ok
 
 # Search logs
 npx wrangler tail --search "RSS fetch"
+npx wrangler tail --search "Cron triggered"
 
 # Frontend (Pages) logs
 # View in Cloudflare Dashboard → Pages → Your Project → Deployments → View logs
 ```
 
-### View Metrics
+#### View Metrics
 
 - **Workers**: Cloudflare Dashboard → Workers → Your Worker → **Metrics**
 - **Pages**: Cloudflare Dashboard → Pages → Your Project → **Analytics**
 
-### Common Issues
+#### Health Checks
 
-#### CORS Errors
+```bash
+# Check API health
+curl https://api.example.com/health
+# Or: curl https://your-worker.workers.dev/health
+# Response: {"status":"ok","runtime":"cloudflare"}
 
-**Symptom**: Frontend requests blocked by CORS policy
+# Check frontend
+curl https://feed.example.com/health
+# Or: curl https://your-pages-project.pages.dev/health
+```
 
-**Solution**:
+#### Common Issues
+
+**CORS Errors:**
 ```bash
 # Ensure CORS_ORIGIN includes your frontend URL
 npx wrangler secret put CORS_ORIGIN
-# Enter: https://your-pages-project.pages.dev
+# Enter: https://feed.example.com
+# Or if using Pages default: https://your-pages-project.pages.dev
 ```
 
-#### Authentication Cookies Not Working
-
-**Symptom**: Users can't stay logged in
-
-**Solution**:
+**Authentication Cookies Not Working:**
 - If frontend/API on different subdomains: Set `COOKIE_DOMAIN` secret
 - Verify `CORS_ORIGIN` includes frontend URL
 - Ensure frontend uses `credentials: "include"` in fetch requests
 
-#### Database Migration Failed
-
-**Symptom**: Worker errors about missing tables
-
-**Solution**:
+**Database Migration Failed:**
 ```bash
 # Check migration status
 npx wrangler d1 migrations list tuvix
 
 # Re-run migrations
 pnpm run db:migrate:d1
+
+# Check D1 status
+npx wrangler d1 execute tuvix --remote \
+  --command "SELECT * FROM __drizzle_migrations;"
 ```
 
-#### Rate Limit Namespaces Not Found
-
-**Symptom**: Worker errors about rate limit bindings
-
-**Solution**:
+**Rate Limit Namespaces Not Found:**
 - Verify `wrangler.toml` has correct format:
   - Uses `name` (not `binding`)
   - Uses `namespace_id` as a string integer (e.g., `"1001"`)
@@ -819,13 +757,18 @@ pnpm run db:migrate:d1
 - Ensure `namespace_id` values are unique positive integers
 - Check that bindings match the names used in code (`API_RATE_LIMIT`, `FEED_RATE_LIMIT`)
 
+**Rate Limiting:**
+- **API Rate Limiting**: Per-user, per-minute limits based on subscription plan
+- **Public Feed Rate Limiting**: Per-feed owner, per-minute limits
+- Monitor: `npx wrangler tail --search "Rate limit"`
+
 ---
 
-## Environment Configuration
+## Shared Topics
 
-### Shared Variables
+### Environment Variables
 
-These apply to both deployments:
+#### Shared Variables (Both Deployments)
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -833,16 +776,14 @@ These apply to both deployments:
 | `CORS_ORIGIN` | Yes | - | Allowed CORS origins (comma-separated) |
 | `NODE_ENV` | No | development | Environment mode |
 
-**Note**: Better Auth uses HTTP-only cookies for session management. The `BETTER_AUTH_SECRET` is used to sign and verify session cookies, not JWT tokens.
-
-### Docker-Only Variables
+#### Docker-Only Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DATABASE_PATH` | No | ./data/tuvix.db | Path to SQLite database |
 | `PORT` | No | 3001 | API server port |
 
-### Cloudflare-Only Variables
+#### Cloudflare-Only Variables
 
 **Bindings** (configured in `wrangler.toml`):
 
@@ -858,7 +799,7 @@ These apply to both deployments:
 |--------|----------|-------------|
 | `BETTER_AUTH_SECRET` | Yes | Secret for Better Auth session management (min 32 chars) |
 | `CORS_ORIGIN` | Yes | Allowed CORS origins (comma-separated) |
-| `RESEND_API_KEY` | No | Resend API key for email service (see [Email System Guide](../developer/email-system.md)) |
+| `RESEND_API_KEY` | No | Resend API key for email service (see [Email System Guide](developer/email-system.md)) |
 | `EMAIL_FROM` | No | Email sender address (must match verified domain in Resend) |
 | `BASE_URL` | No | Base URL for generating email links |
 | `COOKIE_DOMAIN` | No | Root domain for cross-subdomain cookies (e.g., "example.com") |
@@ -866,102 +807,11 @@ These apply to both deployments:
 | `ADMIN_PASSWORD` | No | Admin password for initialization |
 | `ADMIN_EMAIL` | No | Admin email for initialization |
 
-**Better Auth**: Better Auth handles authentication via HTTP-only cookies. Users authenticate through Better Auth endpoints (`/api/auth/sign-in/*`, `/api/auth/sign-up/*`), and sessions are managed automatically.
-
 **⚠️ Security Note**: Never commit secrets to `wrangler.toml`. Use `wrangler secret put` for all sensitive values. The `wrangler.toml` file with empty IDs is safe to commit as a template.
 
----
+### Database Migrations
 
-## Scheduled Tasks (Cron)
-
-TuvixRSS runs two scheduled tasks:
-
-1. **RSS Feed Fetching** - Fetches new articles from subscribed feeds
-2. **Article Pruning** - Removes old articles based on retention policy
-
-### Docker Compose Cron
-
-Uses `node-cron` (scheduler.ts:44):
-
-```typescript
-// RSS fetch - dynamic interval from global_settings
-cron.schedule(fetchCronExpression, async () => {
-  await handleRSSFetch(env);
-});
-
-// Article prune - daily at 2 AM
-cron.schedule("0 2 * * *", async () => {
-  await handleArticlePrune(env);
-});
-```
-
-**Configuration:**
-
-- Fetch interval: Configurable via `global_settings.fetchIntervalMinutes`
-- Default: 60 minutes
-- Minimum: 5 minutes
-
-**Logs:**
-
-```bash
-docker compose logs -f api | grep "RSS fetch\|Prune"
-```
-
-### Cloudflare Workers Cron
-
-Uses Workers Scheduled Events (cloudflare.ts:284):
-
-```toml
-# wrangler.toml
-[triggers]
-crons = ["*/5 * * * *"]  # Every 5 minutes
-```
-
-**How it works:**
-
-1. Cron triggers every 5 minutes
-2. Checks `global_settings.lastRssFetchAt` and `fetchIntervalMinutes`
-3. Runs RSS fetch if interval has elapsed
-4. Checks `global_settings.lastPruneAt`
-5. Runs prune if 24 hours have elapsed
-
-**Configuration:**
-
-```bash
-# View cron triggers
-npx wrangler deployments list
-
-# Test cron locally
-npx wrangler dev --test-scheduled
-
-# Monitor cron execution
-npx wrangler tail --search "Cron triggered"
-```
-
-**Cron Interval Limits:**
-
-- Cloudflare: Minimum 1 minute intervals
-- Recommended: 5-15 minutes (balance between freshness and costs)
-
-### Customizing Fetch Interval
-
-Both deployments read from `global_settings` table:
-
-```sql
--- Update via SQL
-UPDATE global_settings SET fetchIntervalMinutes = 30 WHERE id = 1;
-```
-
-Or via admin UI:
-1. Navigate to Settings
-2. Update "Fetch Interval (minutes)"
-3. Save
-
----
-
-## Database Migrations
-
-### Docker Compose Migrations
+#### Docker Compose Migrations
 
 Migrations run automatically on container startup (packages/api/Dockerfile:45):
 
@@ -979,7 +829,7 @@ pnpm run db:migrate
 docker compose exec api node dist/db/migrate-local.js
 ```
 
-### Cloudflare D1 Migrations
+#### Cloudflare D1 Migrations
 
 Must be run manually before deployment:
 
@@ -994,12 +844,8 @@ pnpm run db:migrate:d1:local
 
 # Apply to remote D1
 pnpm run db:migrate:d1
-```
 
-**Verify migrations:**
-
-```bash
-# List tables
+# Verify migrations
 npx wrangler d1 execute tuvix --remote \
   --command "SELECT name FROM sqlite_master WHERE type='table';"
 
@@ -1007,7 +853,7 @@ npx wrangler d1 execute tuvix --remote \
 npx wrangler d1 migrations list tuvix
 ```
 
-### Migration Workflow
+#### Migration Workflow
 
 1. **Modify Schema** - Edit `packages/api/src/db/schema.ts`
 2. **Generate Migration** - `pnpm run db:generate`
@@ -1016,175 +862,85 @@ npx wrangler d1 migrations list tuvix
    - Docker: Restart containers (auto-migrates)
    - Workers: Run `pnpm run db:migrate:d1` then deploy
 
----
+### Scheduled Tasks (Cron)
 
-## Monitoring & Health Checks
+TuvixRSS runs two scheduled tasks:
 
-### Health Check Endpoints
+1. **RSS Feed Fetching** - Fetches new articles from subscribed feeds
+2. **Article Pruning** - Removes old articles based on retention policy
 
-Both deployments expose health check endpoints:
+#### Docker Compose Cron
 
-```bash
-# Docker Compose
-curl http://localhost:3001/health
-# Response: {"status":"ok","runtime":"nodejs"}
+Uses `node-cron` (scheduler.ts:44):
 
-curl http://localhost:5173/health
-# Response: ok
+```typescript
+// RSS fetch - dynamic interval from global_settings
+cron.schedule(fetchCronExpression, async () => {
+  await handleRSSFetch(env);
+});
 
-# Cloudflare Workers
-curl https://your-worker.workers.dev/health
-# Response: {"status":"ok","runtime":"cloudflare"}
+// Article prune - daily at 2 AM
+cron.schedule("0 2 * * *", async () => {
+  await handleArticlePrune(env);
+});
 ```
 
-### Docker Health Checks
+**Configuration:**
+- Fetch interval: Configurable via `global_settings.fetchIntervalMinutes`
+- Default: 60 minutes
+- Minimum: 5 minutes
 
-Configured in docker-compose.yml:
-
-```yaml
-healthcheck:
-  test: ["CMD", "wget", "--spider", "http://localhost:3001/health"]
-  interval: 30s
-  timeout: 3s
-  start_period: 5s
-  retries: 3
+**Logs:**
+```bash
+docker compose logs -f api | grep "RSS fetch\|Prune"
 ```
 
-**Check health:**
+#### Cloudflare Workers Cron
 
-```bash
-docker compose ps
-docker inspect tuvix-api | grep -A 5 Health
+Uses Workers Scheduled Events (cloudflare.ts:284):
+
+```toml
+# wrangler.toml
+[triggers]
+crons = ["*/5 * * * *"]  # Every 5 minutes
 ```
 
-### Cloudflare Monitoring
+**How it works:**
+1. Cron triggers every 5 minutes
+2. Checks `global_settings.lastRssFetchAt` and `fetchIntervalMinutes`
+3. Runs RSS fetch if interval has elapsed
+4. Checks `global_settings.lastPruneAt`
+5. Runs prune if 24 hours have elapsed
 
+**Configuration:**
 ```bash
-# Live request logs
-npx wrangler tail
+# View cron triggers
+npx wrangler deployments list
 
-# Cron job logs
+# Test cron locally
+npx wrangler dev --test-scheduled
+
+# Monitor cron execution
 npx wrangler tail --search "Cron triggered"
-
-# Error logs
-npx wrangler tail --status error
-
-# Metrics in dashboard
-# Visit: https://dash.cloudflare.com > Workers > Your Worker > Metrics
 ```
 
-### Rate Limiting
+**Cron Interval Limits:**
+- Cloudflare: Minimum 1 minute intervals
+- Recommended: 5-15 minutes (balance between freshness and costs)
 
-Rate limiting uses Cloudflare Workers rate limit bindings:
+#### Customizing Fetch Interval
 
-- **API Rate Limiting**: Per-user, per-minute limits based on subscription plan
-- **Public Feed Rate Limiting**: Per-feed owner, per-minute limits
+Both deployments read from `global_settings` table:
 
-Rate limiting is **disabled** for Docker Compose deployments.
-
-Monitor rate limiting:
-
-```bash
-# Docker
-docker compose logs api | grep "Rate limit"
-
-# Workers
-npx wrangler tail --search "Rate limit"
+```sql
+-- Update via SQL
+UPDATE global_settings SET fetchIntervalMinutes = 30 WHERE id = 1;
 ```
 
-### Alerting
-
-**Docker:**
-- Use monitoring tools like Prometheus + Grafana
-- Monitor health check endpoint
-- Set up log aggregation (ELK, Loki)
-
-**Cloudflare:**
-- Configure Workers Analytics in dashboard
-- Set up Logpush to external service
-- Use Cloudflare's built-in email alerts
-
----
-
-## Troubleshooting
-
-### Common Issues
-
-#### Docker: Port Already in Use
-
-```bash
-# Check what's using the port
-lsof -i :3001
-
-# Change port in .env
-PORT=3002
-```
-
-#### Docker: Database Locked
-
-```bash
-# Stop all containers
-docker compose down
-
-# Remove stale lock
-rm -f ./data/tuvix.db-shm ./data/tuvix.db-wal
-
-# Restart
-docker compose up -d
-```
-
-#### Workers: Migration Failed
-
-```bash
-# Check D1 status
-npx wrangler d1 execute tuvix --remote \
-  --command "SELECT * FROM __drizzle_migrations;"
-
-# Force migration
-npx wrangler d1 migrations apply tuvix --remote
-```
-
-#### Workers: Rate Limit Namespaces Not Found
-
-**Solution**:
-- Verify `wrangler.toml` configuration format:
-  ```toml
-  [[ratelimits]]
-  name = "API_RATE_LIMIT"
-  namespace_id = "1001"  # User-defined positive integer
-  simple = { limit = 10000, period = 60 }
-  ```
-- Ensure `namespace_id` values are unique positive integers (you choose these yourself)
-- Check that binding names match code (`API_RATE_LIMIT`, `FEED_RATE_LIMIT`)
-
-### Logs
-
-#### Docker
-
-```bash
-# All services
-docker compose logs -f
-
-# Specific service
-docker compose logs -f api
-
-# Last 100 lines
-docker compose logs --tail=100 api
-```
-
-#### Workers
-
-```bash
-# Live logs
-npx wrangler tail
-
-# Filter by status
-npx wrangler tail --status error
-npx wrangler tail --status ok
-
-# Search logs
-npx wrangler tail --search "RSS fetch"
-```
+Or via admin UI:
+1. Navigate to Settings
+2. Update "Fetch Interval (minutes)"
+3. Save
 
 ---
 
@@ -1227,42 +983,40 @@ feature branch → PR → development → PR → main → Release → Deploy
 - Manual workflow dispatch
 
 **Process:**
-1. Checks out release tag
-2. Runs type checks and tests
-3. Builds API and App
-4. Deploys API to Cloudflare Workers
-5. Deploys App to Cloudflare Pages
+1. Checks out release tag (from release or manual input)
+2. Runs type checks and tests for API
+3. Builds API
+4. Substitutes `D1_DATABASE_ID` in `wrangler.toml` using `envsubst`
+5. Deploys API to Cloudflare Workers
 6. Runs database migrations (after successful API deployment)
-7. Outputs deployment summary with URLs
+7. Runs type checks and tests for App
+8. Builds App (with `VITE_API_URL` from secrets)
+9. Deploys App to Cloudflare Pages (after API deployment succeeds)
+10. Outputs deployment summary with URLs
 
 **Purpose:** Automated production deployment on releases.
 
 ### Required GitHub Secrets
 
-Configure these in **Settings → Secrets and variables → Actions**:
+Configure these in **Settings → Secrets and variables → Actions** → **Secrets** tab:
 
-| Secret | Description |
-|--------|-------------|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Workers and Pages permissions |
-| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
-| `CLOUDFLARE_WORKER_NAME` | Worker name (from `wrangler.toml`, e.g., `tuvix-api`) |
-| `CLOUDFLARE_PAGES_PROJECT_NAME` | Cloudflare Pages project name |
-| `VITE_API_URL` | API URL for frontend builds (e.g., `https://api.yourdomain.com/trpc`) |
+| Secret | Required | Description |
+|--------|----------|-------------|
+| `CLOUDFLARE_API_TOKEN` | Yes | Cloudflare API token with Workers and Pages permissions |
+| `CLOUDFLARE_ACCOUNT_ID` | Yes | Your Cloudflare account ID |
+| `D1_DATABASE_ID` | Yes | Your D1 database ID (from `wrangler d1 create tuvix`) - used for envsubst substitution |
+| `CLOUDFLARE_PAGES_PROJECT_NAME` | Yes | Cloudflare Pages project name |
+| `VITE_API_URL` | Yes | API URL for frontend builds (e.g., `https://api.example.com/trpc` or `https://your-worker.workers.dev/trpc`) |
+
+**Note:** The worker name is automatically read from `packages/api/wrangler.toml` → `name` field. No secret needed.
 
 **Getting Cloudflare Credentials:**
 
-1. **API Token:**
-   ```bash
-   # Go to Cloudflare Dashboard → My Profile → API Tokens
-   # Create token with: Account.Cloudflare Workers:Edit, Account.Cloudflare Pages:Edit
-   ```
-
-2. **Account ID:**
-   - Found in Cloudflare Dashboard → Right sidebar
-
-3. **Worker/Pages Names:**
-   - Worker: Check `packages/api/wrangler.toml` → `name` field
-   - Pages: Create in Cloudflare Dashboard or use existing name
+1. **API Token:** Cloudflare Dashboard → My Profile → API Tokens → Create token with: Account.Cloudflare Workers:Edit, Account.Cloudflare Pages:Edit
+2. **Account ID:** Found in Cloudflare Dashboard → Right sidebar
+3. **D1 Database ID:** Run `npx wrangler d1 create tuvix` locally, copy the `database_id` from output, add as `D1_DATABASE_ID` secret
+4. **Pages Project:** Create via CLI (`npx wrangler pages project create tuvix-app`) or Dashboard, add project name as `CLOUDFLARE_PAGES_PROJECT_NAME` secret (must match exactly, case-sensitive)
+5. **Worker Name:** Automatically read from `packages/api/wrangler.toml` → `name` field (no secret needed)
 
 ### Deployment Process
 
@@ -1280,9 +1034,14 @@ Configure these in **Settings → Secrets and variables → Actions**:
 
 2. **Workflow Automatically:**
    - Checks out the release tag
-   - Runs all validation checks
-   - Deploys to Cloudflare Workers and Pages
-   - Runs database migrations
+   - Runs type checks and tests for API
+   - Builds API
+   - Substitutes `D1_DATABASE_ID` in `wrangler.toml` using `envsubst`
+   - Deploys API to Cloudflare Workers
+   - Runs database migrations (after API deployment succeeds)
+   - Runs type checks and tests for App
+   - Builds App with `VITE_API_URL` from secrets
+   - Deploys App to Cloudflare Pages (only after API deployment succeeds)
    - Outputs deployment summary with URLs
 
 #### Manual Deployment
@@ -1292,49 +1051,14 @@ Configure these in **Settings → Secrets and variables → Actions**:
 3. Select branch and enter version tag (e.g., `v1.0.0`)
 4. Click **"Run workflow"**
 
-### Coverage Reporting
-
-Coverage is automatically generated and reported:
-
-- **PR Comments:** Coverage changes appear in pull request comments
-- **Artifacts:** Full HTML coverage reports available for download
-- **GitHub Integration:** Uses Codecov Action for coverage visualization
-
-**View Coverage Locally:**
-```bash
-pnpm run test:coverage
-open coverage/index.html
-```
-
-### Dependabot
-
-Automated dependency updates configured:
-- **Schedule:** Monthly checks
-- **Grouping:** Production and development dependencies grouped separately
-- **Labels:** Automatic labeling for easy filtering
-- **CI:** Dependabot PRs automatically trigger CI workflows
-
-### Branch Protection
-
-Configure branch protection rules to enforce CI checks:
-
-**For `development` branch:**
-- Require pull request before merging
-- Require status checks: `lint-and-format`, `type-check`, `test-api`, `test-app`, `build`
-- Require branches to be up to date
-
-**For `main` branch:**
-- Same as development
-- Optional: Require code owner review
-
-See [`.github/workflows/README.md`](../.github/workflows/README.md) for detailed setup instructions.
-
 ### Workflow Features
 
-- ✅ **Parallel Jobs:** Faster CI feedback
+- ✅ **Sequential Deployment:** API deploys first, then App (ensures API is ready)
+- ✅ **Environment Variable Substitution:** `D1_DATABASE_ID` automatically substituted via `envsubst` before deployment
+- ✅ **Validation:** Type checks and tests run before deployment
+- ✅ **Database Migrations:** Automatically run after successful API deployment
 - ✅ **Concurrency Control:** Prevents duplicate runs
 - ✅ **Caching:** Optimized dependency caching
-- ✅ **Coverage Reporting:** Automatic PR coverage comments
 - ✅ **Environment Protection:** Production deployments use GitHub environments
 - ✅ **Release Tag Checkout:** Ensures correct code version is deployed
 - ✅ **Deployment URLs:** Displayed in workflow summary
@@ -1343,19 +1067,24 @@ See [`.github/workflows/README.md`](../.github/workflows/README.md) for detailed
 
 **Workflow Fails:**
 - Check Actions tab for specific error messages
-- Verify all required secrets are configured
+- Verify all required secrets are configured (see Required GitHub Secrets above)
 - Run checks locally: `pnpm run pre-check`
+- Check that `D1_DATABASE_ID` substitution succeeded (look for "Successfully substituted" message)
 
 **Deployment Fails:**
-- Verify Cloudflare API token permissions
+- Verify Cloudflare API token permissions (Workers:Edit, Pages:Edit)
 - Check that Worker and Pages projects exist
+- Verify `D1_DATABASE_ID` secret is set correctly (workflow will fail if missing)
 - Review Cloudflare dashboard for errors
-- Ensure database migrations completed successfully
+- Ensure database migrations completed successfully (runs after API deployment)
+- Check that worker name in `wrangler.toml` matches your Cloudflare Worker
 
 **Coverage Not Showing:**
 - Coverage generates automatically during test runs
 - Check that `coverage/lcov.info` files exist
 - For private repos, may need `CODECOV_TOKEN` secret
+
+See [`.github/workflows/README.md`](../.github/workflows/README.md) for detailed setup instructions.
 
 ---
 
@@ -1413,7 +1142,7 @@ See [`.github/workflows/README.md`](../.github/workflows/README.md) for detailed
 
 After deployment:
 
-1. Create admin user (see above)
+1. Create admin user (see deployment sections above)
 2. Configure global settings via admin UI
 3. Set up monitoring and alerting
 4. Configure backups
