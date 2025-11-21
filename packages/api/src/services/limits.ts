@@ -91,16 +91,15 @@ export async function getUserLimits(
     throw new Error(`Plan '${planId}' not found`);
   }
 
-  // Use custom limits if they exist, otherwise use plan limits
+  // Use custom limits for non-rate-limit fields if they exist, otherwise use plan limits
+  // Rate limits always come from plan (plan-specific bindings enforce them)
   return {
     maxSources: customLimits?.maxSources ?? plan.maxSources,
     maxPublicFeeds: customLimits?.maxPublicFeeds ?? plan.maxPublicFeeds,
     maxCategories: customLimits?.maxCategories ?? plan.maxCategories,
-    apiRateLimitPerMinute:
-      customLimits?.apiRateLimitPerMinute ?? plan.apiRateLimitPerMinute,
-    publicFeedRateLimitPerMinute:
-      customLimits?.publicFeedRateLimitPerMinute ??
-      plan.publicFeedRateLimitPerMinute,
+    // Rate limits always use plan limits (plan-specific bindings enforce them)
+    apiRateLimitPerMinute: plan.apiRateLimitPerMinute,
+    publicFeedRateLimitPerMinute: plan.publicFeedRateLimitPerMinute,
   };
 }
 

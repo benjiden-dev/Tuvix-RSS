@@ -265,8 +265,9 @@ Override plan limits for specific users:
 await client.admin.setCustomLimits.mutate({
   userId: 456,
   maxSources: 500, // Override plan limit
-  apiRateLimitPerMinute: 1000, // VIP rate limit
-  notes: "Beta tester - unlimited access",
+  maxPublicFeeds: 50, // Override plan limit
+  notes: "Beta tester - higher limits",
+  // Note: Rate limits cannot be customized - they are enforced by plan-specific bindings
 });
 
 // Remove custom limits (revert to plan)
@@ -373,11 +374,17 @@ await client.admin.updatePlan.mutate({
 Give specific users higher limits:
 
 ```typescript
+// To give a user higher rate limits, change their plan instead:
+await client.admin.changePlan.mutate({
+  userId: 456,
+  plan: "enterprise", // Enterprise plan has 600/min rate limit
+});
+
+// Custom limits can only override non-rate-limit fields:
 await client.admin.setCustomLimits.mutate({
   userId: 456,
-  apiRateLimitPerMinute: 2000, // Very high limit
-  publicFeedRateLimitPerMinute: 1667, // ~100000/hour = ~1667/minute
-  notes: "Enterprise trial user",
+  maxSources: 10000, // Override plan limit
+  notes: "Enterprise trial user - higher source limit",
 });
 ```
 
@@ -552,7 +559,7 @@ See `packages/api/src/routers/admin.ts` for complete endpoint documentation.
 - `admin.listUsers` - List users (with filters)
 - `admin.getUser` - Get user details
 - `admin.changePlan` - Change user's plan
-- `admin.setCustomLimits` - Override plan limits
+- `admin.setCustomLimits` - Override plan limits (maxSources, maxPublicFeeds, maxCategories only - rate limits cannot be customized)
 - `admin.removeCustomLimits` - Remove overrides
 - `admin.banUser` - Ban/unban user
 - `admin.deleteUser` - Delete user

@@ -83,8 +83,6 @@ function AdminUsers() {
     maxSources: "",
     maxPublicFeeds: "",
     maxCategories: "",
-    apiRateLimitPerMinute: "",
-    publicFeedRateLimitPerMinute: "",
   });
 
   const {
@@ -191,12 +189,7 @@ function AdminUsers() {
         maxCategories: customLimits.maxCategories
           ? parseInt(customLimits.maxCategories)
           : null,
-        apiRateLimitPerMinute: customLimits.apiRateLimitPerMinute
-          ? parseInt(customLimits.apiRateLimitPerMinute)
-          : null,
-        publicFeedRateLimitPerMinute: customLimits.publicFeedRateLimitPerMinute
-          ? parseInt(customLimits.publicFeedRateLimitPerMinute)
-          : null,
+        // Rate limits are not customizable - they come from plan-specific bindings
       });
     }
   };
@@ -212,18 +205,12 @@ function AdminUsers() {
         maxSources: user.customLimits.maxSources?.toString() || "",
         maxPublicFeeds: user.customLimits.maxPublicFeeds?.toString() || "",
         maxCategories: user.customLimits.maxCategories?.toString() || "",
-        apiRateLimitPerMinute:
-          user.customLimits.apiRateLimitPerMinute?.toString() || "",
-        publicFeedRateLimitPerMinute:
-          user.customLimits.publicFeedRateLimitPerMinute?.toString() || "",
       });
     } else {
       setCustomLimits({
         maxSources: "",
         maxPublicFeeds: "",
         maxCategories: "",
-        apiRateLimitPerMinute: "",
-        publicFeedRateLimitPerMinute: "",
       });
     }
     setCustomLimitsUserId(userId);
@@ -600,38 +587,6 @@ function AdminUsers() {
                   setCustomLimits({
                     ...customLimits,
                     maxCategories: e.target.value,
-                  })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="apiRateLimit">API Rate Limit (per minute)</Label>
-              <Input
-                id="apiRateLimit"
-                type="number"
-                placeholder="Leave empty for default"
-                value={customLimits.apiRateLimitPerMinute}
-                onChange={(e) =>
-                  setCustomLimits({
-                    ...customLimits,
-                    apiRateLimitPerMinute: e.target.value,
-                  })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="feedRateLimit">
-                Public Feed Rate Limit (per minute)
-              </Label>
-              <Input
-                id="feedRateLimit"
-                type="number"
-                placeholder="Leave empty for default"
-                value={customLimits.publicFeedRateLimitPerMinute}
-                onChange={(e) =>
-                  setCustomLimits({
-                    ...customLimits,
-                    publicFeedRateLimitPerMinute: e.target.value,
                   })
                 }
               />

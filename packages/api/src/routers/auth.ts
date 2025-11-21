@@ -20,7 +20,7 @@ import { createAuth } from "@/auth/better-auth";
 import { fromNodeHeaders } from "better-auth/node";
 import { hasAdminUser } from "@/services/admin-init";
 import { getGlobalSettings } from "@/services/global-settings";
-import { user, userSettings, usageStats } from "@/db/schema";
+import * as schema from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { DEFAULT_USER_PLAN, ADMIN_PLAN } from "@/config/plans";
 import { usernameValidator, emailValidator } from "@/types/validators";
@@ -95,8 +95,8 @@ export const authRouter = router({
         // Get the created user from Better Auth user table
         const [dbUser] = await ctx.db
           .select()
-          .from(user)
-          .where(eq(user.id, userId))
+          .from(schema.user)
+          .where(eq(schema.user.id, userId))
           .limit(1);
 
         if (!dbUser) {
@@ -123,17 +123,17 @@ export const authRouter = router({
 
             // Update user role and plan in Better Auth user table
             await ctx.db
-              .update(user)
+              .update(schema.user)
               .set({ role, plan })
-              .where(eq(user.id, userId));
+              .where(eq(schema.user.id, userId));
           }
         } else {
           // Ensure plan is set even if not first admin
           if (!dbUser.plan) {
             await ctx.db
-              .update(user)
+              .update(schema.user)
               .set({ plan: DEFAULT_USER_PLAN })
-              .where(eq(user.id, userId));
+              .where(eq(schema.user.id, userId));
             plan = DEFAULT_USER_PLAN;
           }
         }
@@ -141,12 +141,12 @@ export const authRouter = router({
         // Create default user settings if not exists
         const [existingSettings] = await ctx.db
           .select()
-          .from(userSettings)
-          .where(eq(userSettings.userId, userId))
+          .from(schema.userSettings)
+          .where(eq(schema.userSettings.userId, userId))
           .limit(1);
 
         if (!existingSettings) {
-          await ctx.db.insert(userSettings).values({
+          await ctx.db.insert(schema.userSettings).values({
             userId: userId,
           });
         }
@@ -154,12 +154,12 @@ export const authRouter = router({
         // Initialize usage stats if not exists
         const [existingStats] = await ctx.db
           .select()
-          .from(usageStats)
-          .where(eq(usageStats.userId, userId))
+          .from(schema.usageStats)
+          .where(eq(schema.usageStats.userId, userId))
           .limit(1);
 
         if (!existingStats) {
-          await ctx.db.insert(usageStats).values({
+          await ctx.db.insert(schema.usageStats).values({
             userId: userId,
             sourceCount: 0,
             publicFeedCount: 0,
@@ -246,8 +246,8 @@ export const authRouter = router({
         // Get user from Better Auth user table for role/plan info
         const [dbUser] = await ctx.db
           .select()
-          .from(user)
-          .where(eq(user.id, Number(result.user.id)))
+          .from(schema.user)
+          .where(eq(schema.user.id, Number(result.user.id)))
           .limit(1);
 
         if (!dbUser) {
@@ -289,8 +289,8 @@ export const authRouter = router({
   me: protectedProcedure.query(async ({ ctx }) => {
     const [dbUser] = await ctx.db
       .select()
-      .from(user)
-      .where(eq(user.id, ctx.user.userId))
+      .from(schema.user)
+      .where(eq(schema.user.id, ctx.user.userId))
       .limit(1);
 
     if (!dbUser) {
@@ -329,8 +329,8 @@ export const authRouter = router({
       const settings = await getGlobalSettings(ctx.db);
       const [dbUser] = await ctx.db
         .select()
-        .from(user)
-        .where(eq(user.id, ctx.user.userId))
+        .from(schema.user)
+        .where(eq(schema.user.id, ctx.user.userId))
         .limit(1);
 
       if (!dbUser) {
@@ -374,8 +374,8 @@ export const authRouter = router({
       // Check if user is already verified
       const [dbUser] = await ctx.db
         .select()
-        .from(user)
-        .where(eq(user.id, ctx.user.userId))
+        .from(schema.user)
+        .where(eq(schema.user.id, ctx.user.userId))
         .limit(1);
 
       if (!dbUser) {
@@ -393,9 +393,18 @@ export const authRouter = router({
       }
 
       // Rate limit: max 1 request per 5 minutes
+      // Get user's plan for rate limiting
+      const [userRecord] = await ctx.db
+        .select()
+        .from(schema.user)
+        .where(eq(schema.user.id, ctx.user.userId))
+        .limit(1);
+      const planId = userRecord?.plan || "free";
+
       const rateLimitResult = await checkRateLimit(
         ctx.env,
         ctx.user.userId,
+        planId,
         1,
         5 * 60 * 1000, // 5 minutes
         "api",
@@ -555,8 +564,8 @@ export const authRouter = router({
       // Try to find user for logging
       const [userRecord] = await ctx.db
         .select()
-        .from(user)
-        .where(eq(user.email, input.email))
+        .from(schema.user)
+        .where(eq(schema.user.email, input.email))
         .limit(1);
 
       const ipAddress = getClientIp(ctx.headers);

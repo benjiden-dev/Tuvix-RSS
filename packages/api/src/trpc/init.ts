@@ -6,7 +6,7 @@
 
 import { initTRPC, TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
-import { user } from "@/db/schema";
+import * as schema from "@/db/schema";
 import { checkLimit, getUserLimits } from "@/services/limits";
 import { checkApiRateLimit } from "@/services/rate-limiter";
 import { getGlobalSettings } from "@/services/global-settings";
@@ -47,8 +47,8 @@ const isAuthed = t.middleware(async ({ ctx, next }) => {
   // Check if user is banned (using Better Auth user table)
   const [userRecord] = await ctx.db
     .select()
-    .from(user)
-    .where(eq(user.id, ctx.user.userId))
+    .from(schema.user)
+    .where(eq(schema.user.id, ctx.user.userId))
     .limit(1);
 
   if (!userRecord) {
@@ -98,8 +98,8 @@ const isAuthedWithoutVerification = t.middleware(async ({ ctx, next }) => {
   // Check if user is banned (using Better Auth user table)
   const [userRecord] = await ctx.db
     .select()
-    .from(user)
-    .where(eq(user.id, ctx.user.userId))
+    .from(schema.user)
+    .where(eq(schema.user.id, ctx.user.userId))
     .limit(1);
 
   if (!userRecord) {
@@ -199,8 +199,8 @@ const isAdmin = t.middleware(async ({ ctx, next }) => {
   // Check if user is admin (using Better Auth user table)
   const [userRecord] = await ctx.db
     .select()
-    .from(user)
-    .where(eq(user.id, ctx.user.userId))
+    .from(schema.user)
+    .where(eq(schema.user.id, ctx.user.userId))
     .limit(1);
 
   if (!userRecord) {
@@ -239,6 +239,7 @@ export const adminProcedure = t.procedure.use(isAdmin);
 /**
  * Rate limiting middleware
  * Checks API rate limit for authenticated users
+ * Uses plan-specific Cloudflare Workers rate limit bindings
  */
 const withRateLimit = t.middleware(async ({ ctx, next }) => {
   if (!ctx.user) {
@@ -251,13 +252,23 @@ const withRateLimit = t.middleware(async ({ ctx, next }) => {
     return next();
   }
 
-  // Get user's API rate limit
+  // Get user's plan and limits
   const limits = await getUserLimits(ctx.db, ctx.user.userId);
 
-  // Check rate limit
+  // Get user's plan ID (needed to select the correct binding)
+  const [user] = await ctx.db
+    .select()
+    .from(schema.user)
+    .where(eq(schema.user.id, ctx.user.userId))
+    .limit(1);
+
+  const planId = user?.plan || "free";
+
+  // Check rate limit using plan-specific binding
   const rateLimitResult = await checkApiRateLimit(
     ctx.env,
     ctx.user.userId,
+    planId,
     limits.apiRateLimitPerMinute,
   );
 

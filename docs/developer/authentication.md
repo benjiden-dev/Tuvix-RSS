@@ -281,9 +281,16 @@ Admins can override plan limits for individual users via the `user_limits` table
 **Limit Resolution**: `packages/api/src/services/limits.ts`
 
 When checking user limits, the system:
-1. Checks for custom limits in `user_limits` table
+1. Checks for custom limits in `user_limits` table (for maxSources, maxPublicFeeds, maxCategories only)
 2. Falls back to plan defaults from `plans` table
 3. Returns the resolved limits
+
+**Note**: Rate limits (`apiRateLimitPerMinute`, `publicFeedRateLimitPerMinute`) cannot be customized per-user. They are enforced by plan-specific Cloudflare Workers bindings:
+- Free plan: `FREE_API_RATE_LIMIT` binding (60/min)
+- Pro plan: `PRO_API_RATE_LIMIT` binding (180/min)
+- Enterprise/admin plan: `ENTERPRISE_API_RATE_LIMIT` binding (600/min)
+
+To change a user's rate limit, change their plan.
 
 ### Account Banning
 

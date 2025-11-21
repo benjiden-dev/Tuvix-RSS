@@ -40,15 +40,27 @@ database_id = "${D1_DATABASE_ID}" # Substituted by envsubst in CI/CD, or overrid
 
 # Rate Limit Bindings for API and Public Feed rate limiting
 # Uses Cloudflare Workers rate limit bindings
-# Each binding defines a limit and period (10s or 60s)
-# We use a high limit and enforce user-specific limits in code
+# Each plan has its own binding with the plan's rate limit
 # namespace_id: A positive integer you define, unique to your Cloudflare account
 # You choose these IDs yourself - they don't need to be created elsewhere
-[[ratelimits]]
-name = "API_RATE_LIMIT"
-namespace_id = "1001" # User-defined identifier - choose any unique positive integer
-simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user via getUserLimits()
 
+# Plan-specific API rate limit bindings
+[[ratelimits]]
+name = "FREE_API_RATE_LIMIT"
+namespace_id = "1003" # User-defined identifier - choose any unique positive integer
+simple = { limit = 60, period = 60 }  # Free plan: 60 requests per minute
+
+[[ratelimits]]
+name = "PRO_API_RATE_LIMIT"
+namespace_id = "1004" # User-defined identifier - choose any unique positive integer
+simple = { limit = 180, period = 60 }  # Pro plan: 180 requests per minute
+
+[[ratelimits]]
+name = "ENTERPRISE_API_RATE_LIMIT"
+namespace_id = "1005" # User-defined identifier - choose any unique positive integer
+simple = { limit = 600, period = 60 }  # Enterprise/admin plan: 600 requests per minute
+
+# Public Feed rate limiting (unchanged - still uses single binding)
 [[ratelimits]]
 name = "FEED_RATE_LIMIT"
 namespace_id = "1002" # User-defined identifier - choose any unique positive integer

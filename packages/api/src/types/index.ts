@@ -96,24 +96,21 @@ export interface Env {
   ADMIN_PASSWORD?: string;
   ALLOW_FIRST_USER_ADMIN?: string; // "true" or "false"
 
-  // Rate Limiting (Custom API and Public Feed Rate Limiting)
-  API_RATE_LIMIT?: {
-    limit(options: { key: string }): Promise<{
-      success: boolean;
-      limit: number;
-      remaining: number;
-      reset: number; // Unix timestamp in seconds
-    }>;
-  }; // Cloudflare Workers rate limit binding for API requests
+  // Rate Limiting (Plan-specific API rate limiting)
+  FREE_API_RATE_LIMIT?: {
+    limit(options: { key: string }): Promise<{ success: boolean }>;
+  }; // Cloudflare Workers rate limit binding for free plan (60/min)
+  PRO_API_RATE_LIMIT?: {
+    limit(options: { key: string }): Promise<{ success: boolean }>;
+  }; // Cloudflare Workers rate limit binding for pro plan (180/min)
+  ENTERPRISE_API_RATE_LIMIT?: {
+    limit(options: { key: string }): Promise<{ success: boolean }>;
+  }; // Cloudflare Workers rate limit binding for enterprise/admin plan (600/min)
   FEED_RATE_LIMIT?: {
-    limit(options: { key: string }): Promise<{
-      success: boolean;
-      limit: number;
-      remaining: number;
-      reset: number; // Unix timestamp in seconds
-    }>;
+    limit(options: { key: string }): Promise<{ success: boolean }>;
   }; // Cloudflare Workers rate limit binding for public feed requests
   SKIP_RATE_LIMIT?: string; // "true" or "false" - skip rate limiting (for tests)
+  RATE_LIMIT_DEBUG?: string; // "true" or "false" - enable debug logging for rate limits
 
   // Optional Services
   RESEND_API_KEY?: string;

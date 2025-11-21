@@ -26,8 +26,8 @@ TuvixRSS implements a rate limiting system with two distinct layers:
 │ 1. API Rate Limiting (Per-User, Authenticated)          │
 │    - Based on user's subscription plan                  │
 │    - Per-minute window                                  │
-│    - Customizable per-user overrides                    │
-│    - Cloudflare Workers rate limit bindings (Cloudflare)│
+│    - Plan-specific Cloudflare Workers bindings          │
+│    - Free: 60/min, Pro: 180/min, Enterprise: 600/min  │
 │    - No rate limiting (Docker Compose)                  │
 │    - Protects tRPC endpoints                            │
 └─────────────────────────────────────────────────────────┘
@@ -46,10 +46,10 @@ TuvixRSS implements a rate limiting system with two distinct layers:
 
 ### Key Features
 
-- **Cloudflare Workers Native**: Uses Cloudflare Workers rate limit bindings for production deployments
+- **Cloudflare Workers Native**: Uses plan-specific Cloudflare Workers rate limit bindings for production deployments
 - **Per-Minute Windows**: All rate limits are enforced on a per-minute basis
-- **Plan-Based Limits**: Rate limits are configured per subscription plan
-- **Custom Overrides**: Admins can set custom limits for individual users
+- **Plan-Based Limits**: Each plan (free/pro/enterprise) has its own binding with the plan's rate limit
+- **No Custom Rate Limits**: Rate limits are enforced by plan-specific bindings and cannot be customized per-user
 - **Docker Compose**: No rate limiting for Docker Compose deployments (always allows requests)
 - **Access Logging**: Track public feed usage for analytics
 
@@ -80,18 +80,22 @@ type RateLimitType = "api" | "publicFeed";
 
 ### Cloudflare Workers Deployment
 
-1. **Request arrives** → Check user's rate limit from database/plan
-2. **Get rate limit binding** → Select `API_RATE_LIMIT` or `FEED_RATE_LIMIT` based on request type
-3. **Create unique key** → Format: `"type:userId"` (e.g., `"api:123"` or `"publicFeed:456"`)
-4. **Call binding** → `binding.limit({ key })` - this consumes a request and returns status
-5. **Enforce user limit** → Check if user has exceeded their plan-specific limit
-6. **Allow or deny** → Return result based on user's plan limit
+1. **Request arrives** → Get user's plan ID from database
+2. **Select binding** → Choose plan-specific binding:
+   - `FREE_API_RATE_LIMIT` (60/min) for free plan
+   - `PRO_API_RATE_LIMIT` (180/min) for pro plan
+   - `ENTERPRISE_API_RATE_LIMIT` (600/min) for enterprise/admin plan
+3. **Create unique key** → Format: `userId` as string (e.g., `"123"` or `"456"`)
+   - Since bindings are plan-specific, user ID alone is sufficient
+4. **Call binding** → `binding.limit({ key })` - returns `{ success: boolean }`
+5. **Allow or deny** → `success: true` = allowed, `success: false` = rate limit exceeded
 
 **Key Points**:
+- Each plan has its own binding with the plan's exact rate limit
 - Each user gets their own independent counter tracked by the binding
-- The binding has a high limit (10,000 requests/minute) to prevent abuse
-- User-specific limits (from their plan) are enforced in application code
-- The binding's `remaining` value is used to approximate user's usage
+- The binding enforces the plan's limit directly (no application-level enforcement needed)
+- Bindings only return `{ success: boolean }` - no usage details available
+- **Batch Requests**: Cloudflare bindings handle batch requests correctly - each user's requests are tracked independently
 
 ### Docker Compose Deployment
 
@@ -110,15 +114,26 @@ type RateLimitType = "api" | "publicFeed";
 **Note**: Rate limit `namespace_id` values are user-defined positive integers that you choose yourself (e.g., `"1001"`, `"1002"`). They don't need to be created via CLI or dashboard - you simply assign unique integer IDs in your `wrangler.toml` configuration.
 
 ```toml
-# Rate Limit Bindings for API and Public Feed rate limiting
-# Uses Cloudflare Workers rate limit bindings
+# Plan-specific API rate limit bindings
+# Each plan has its own binding with the plan's rate limit
 # namespace_id: A positive integer you define, unique to your Cloudflare account
 # You choose these IDs yourself - they don't need to be created elsewhere
 [[ratelimits]]
-name = "API_RATE_LIMIT"
-namespace_id = "1001"  # User-defined identifier - choose any unique positive integer
-simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user via getUserLimits()
+name = "FREE_API_RATE_LIMIT"
+namespace_id = "1003"  # User-defined identifier - choose any unique positive integer
+simple = { limit = 60, period = 60 }  # Free plan: 60 requests per minute
 
+[[ratelimits]]
+name = "PRO_API_RATE_LIMIT"
+namespace_id = "1004"  # User-defined identifier - choose any unique positive integer
+simple = { limit = 180, period = 60 }  # Pro plan: 180 requests per minute
+
+[[ratelimits]]
+name = "ENTERPRISE_API_RATE_LIMIT"
+namespace_id = "1005"  # User-defined identifier - choose any unique positive integer
+simple = { limit = 600, period = 60 }  # Enterprise/admin plan: 600 requests per minute
+
+# Public Feed rate limiting (unchanged - still uses single binding)
 [[ratelimits]]
 name = "FEED_RATE_LIMIT"
 namespace_id = "1002"  # User-defined identifier - choose any unique positive integer
@@ -147,19 +162,19 @@ wrangler deploy
 **Configuration**: Based on user's subscription plan
 
 **Default Limits by Plan**:
-| Plan | Requests per Minute |
-|------|---------------------|
-| Free | 60 |
-| Pro | 180 |
-| Enterprise | 600 |
-| Custom | Admin-defined |
+| Plan | Requests per Minute | Binding |
+|------|---------------------|---------|
+| Free | 60 | `FREE_API_RATE_LIMIT` |
+| Pro | 180 | `PRO_API_RATE_LIMIT` |
+| Enterprise/Admin | 600 | `ENTERPRISE_API_RATE_LIMIT` |
 
 **Endpoints Protected**: All authenticated tRPC procedures
 
 **How It Works**:
-- Each authenticated API request checks the user's rate limit
-- Uses `API_RATE_LIMIT` binding with key `"api:userId"`
-- User's plan limit is enforced in application code
+- Each authenticated API request checks the user's plan
+- Selects the appropriate plan-specific binding (FREE_API_RATE_LIMIT, PRO_API_RATE_LIMIT, or ENTERPRISE_API_RATE_LIMIT)
+- Uses `userId` as the key (bindings are plan-specific, so user ID alone is sufficient)
+- Binding enforces the plan's limit directly
 - Returns `TOO_MANY_REQUESTS` error if limit exceeded
 
 ### 2. Public Feed Rate Limiting
@@ -213,13 +228,11 @@ Admins can create and edit subscription plans with rate limits:
 
 Admins can override plan limits for specific users:
 
-- **API Rate Limit**: Override the user's plan API rate limit
-- **Public Feed Rate Limit**: Override the user's plan public feed rate limit
+- **Max Sources**: Override the user's plan source limit
+- **Max Public Feeds**: Override the user's plan public feed limit
+- **Max Categories**: Override the user's plan category limit
 
-**Use Cases**:
-- Beta testers who need higher limits
-- Users with special requirements
-- Temporary limit increases
+**Note**: Rate limits cannot be customized per-user. They are enforced by plan-specific Cloudflare Workers bindings. To change a user's rate limit, change their plan.
 
 ### Monitoring Rate Limits
 
@@ -241,9 +254,11 @@ Users can view their rate limits:
 - **Rate Limiting Status**: Shows if rate limiting is enabled or disabled
 - **API Requests (per minute)**: Shows the user's API rate limit from their plan
 - **Public Feed Access (per minute)**: Shows the user's public feed rate limit from their plan
-- **Custom Limits Indicator**: Shows if custom limits are applied
+- **Custom Limits Indicator**: Shows if custom limits are applied (for non-rate-limit fields)
 
 **Note**: Detailed usage statistics (used/remaining) are not available because Cloudflare Workers rate limit bindings don't expose per-user usage data. Users see their plan limits, not real-time usage.
+
+**Batch Requests**: When multiple tRPC procedures are batched into a single HTTP request, they count as 1 rate limit check, not N procedures. This ensures fair rate limiting for batch operations.
 
 ---
 
@@ -255,20 +270,52 @@ Users can view their rate limits:
 
 **Solutions**:
 1. **Check deployment type**: Rate limiting only works on Cloudflare Workers, not Docker Compose
-2. **Verify bindings**: Ensure `API_RATE_LIMIT` and `FEED_RATE_LIMIT` are configured in `wrangler.toml` with correct format:
+2. **Verify bindings**: Ensure all plan-specific bindings are configured in `wrangler.toml`:
+   - `FREE_API_RATE_LIMIT` (namespace_id: 1003, limit: 60)
+   - `PRO_API_RATE_LIMIT` (namespace_id: 1004, limit: 180)
+   - `ENTERPRISE_API_RATE_LIMIT` (namespace_id: 1005, limit: 600)
+   - `FEED_RATE_LIMIT` (namespace_id: 1002, limit: 10000)
    - Uses `name` (not `binding`)
-   - Uses `namespace_id` as a string integer (e.g., `"1001"`)
+   - Uses `namespace_id` as a string integer (e.g., `"1003"`)
    - Uses `simple` object with `limit` and `period`
 3. **Check namespace IDs**: Ensure `namespace_id` values are unique positive integers (you choose these yourself)
 4. **Check logs**: Look for warnings about missing bindings in worker logs
+5. **Verify user's plan**: Ensure users have a valid plan (free, pro, or enterprise) - unknown plans fall back to free plan binding
+
+### Debug Mode
+
+**Enable Debug Logging**: To troubleshoot rate limiting issues, enable debug mode:
+
+```bash
+# Enable debug logging
+npx wrangler secret put RATE_LIMIT_DEBUG true
+
+# Monitor logs
+npx wrangler tail
+
+# Disable after debugging
+npx wrangler secret delete RATE_LIMIT_DEBUG
+```
+
+Debug mode logs all rate limit checks with detailed information:
+- `plan`: User's plan ID (free, pro, enterprise)
+- `type`: Rate limit type (api or publicFeed)
+- `userId`: User ID
+- `limit`: User's plan limit (for display purposes)
+- `allowed`: Whether request was allowed (from binding's success status)
+- `resetAt`: When the rate limit window resets (60 seconds from request time)
+
+**Note**: Cloudflare bindings only return `{ success: boolean }`, so detailed usage statistics (remaining requests, etc.) are not available.
+
+**Note**: Debug mode is opt-in and disabled by default for production safety.
 
 ### Rate Limits Too Strict
 
 **Symptoms**: Users hitting rate limits too frequently
 
 **Solutions**:
-1. **Increase plan limits**: Edit the user's plan in Admin Dashboard → Plans
-2. **Set custom limits**: Override limits for specific users in Admin Dashboard → Users
+1. **Upgrade user's plan**: Move user to a higher plan (pro or enterprise) with higher rate limits
+2. **Adjust plan limits**: Edit plan limits in Admin Dashboard → Plans (affects all users on that plan)
 3. **Check for abuse**: Review rate limit monitor for unusual patterns
 
 ### Rate Limits Too Lenient
@@ -276,8 +323,8 @@ Users can view their rate limits:
 **Symptoms**: Users making excessive requests
 
 **Solutions**:
-1. **Decrease plan limits**: Edit the user's plan in Admin Dashboard → Plans
-2. **Remove custom limits**: Remove custom overrides for users
+1. **Decrease plan limits**: Edit plan limits in Admin Dashboard → Plans (affects all users on that plan)
+2. **Downgrade user's plan**: Move user to a lower plan (free or pro) with lower rate limits
 3. **Review plan tiers**: Consider adjusting default limits for all plans
 
 ---
@@ -292,6 +339,8 @@ Users can view their rate limits:
 
 ### Custom Limits
 
+- **Non-rate-limit fields only**: Custom limits can only override maxSources, maxPublicFeeds, and maxCategories
+- **Rate limits are plan-based**: Rate limits cannot be customized - they are enforced by plan-specific bindings
 - **Use sparingly**: Only set custom limits when necessary
 - **Document reasons**: Add notes when setting custom limits
 - **Review regularly**: Periodically review custom limits and remove unnecessary ones

@@ -195,9 +195,11 @@ app.get("/public/:username/:slug", async (req, res) => {
 
     // Check rate limit for this user's public feeds
     const limits = await getUserLimits(ctx.db, user.id);
+    const planId = user.plan || "free";
     const rateLimitResult = await checkPublicFeedRateLimit(
       ctx.env,
       user.id,
+      planId,
       limits.publicFeedRateLimitPerMinute,
     );
 

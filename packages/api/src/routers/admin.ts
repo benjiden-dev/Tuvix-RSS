@@ -51,8 +51,9 @@ const AdminUserSchema = z.object({
       maxSources: z.number().nullable(),
       maxPublicFeeds: z.number().nullable(),
       maxCategories: z.number().nullable(),
-      apiRateLimitPerMinute: z.number().nullable(),
-      publicFeedRateLimitPerMinute: z.number().nullable(),
+      // Rate limits are not customizable - they come from plan-specific bindings
+      apiRateLimitPerMinute: z.number().nullable(), // Always null, kept for backward compatibility
+      publicFeedRateLimitPerMinute: z.number().nullable(), // Always null, kept for backward compatibility
       notes: z.string().nullable(),
     })
     .nullable(),
@@ -169,9 +170,9 @@ export const adminRouter = router({
                   maxSources: customLimits.maxSources,
                   maxPublicFeeds: customLimits.maxPublicFeeds,
                   maxCategories: customLimits.maxCategories,
-                  apiRateLimitPerMinute: customLimits.apiRateLimitPerMinute,
-                  publicFeedRateLimitPerMinute:
-                    customLimits.publicFeedRateLimitPerMinute,
+                  // Rate limits are not customizable - they come from plan-specific bindings
+                  apiRateLimitPerMinute: null,
+                  publicFeedRateLimitPerMinute: null,
                   notes: customLimits.notes,
                 }
               : null,
@@ -246,9 +247,9 @@ export const adminRouter = router({
               maxSources: customLimits.maxSources,
               maxPublicFeeds: customLimits.maxPublicFeeds,
               maxCategories: customLimits.maxCategories,
-              apiRateLimitPerMinute: customLimits.apiRateLimitPerMinute,
-              publicFeedRateLimitPerMinute:
-                customLimits.publicFeedRateLimitPerMinute,
+              // Rate limits are not customizable - they come from plan-specific bindings
+              apiRateLimitPerMinute: null,
+              publicFeedRateLimitPerMinute: null,
               notes: customLimits.notes,
             }
           : null,
@@ -335,6 +336,7 @@ export const adminRouter = router({
 
   /**
    * Set custom limits for a user
+   * Note: Rate limits are not customizable - they are enforced by plan-specific bindings
    */
   setCustomLimits: adminProcedure
     .input(
@@ -343,8 +345,6 @@ export const adminRouter = router({
         maxSources: z.number().nullable().optional(),
         maxPublicFeeds: z.number().nullable().optional(),
         maxCategories: z.number().nullable().optional(),
-        apiRateLimitPerMinute: z.number().nullable().optional(),
-        publicFeedRateLimitPerMinute: z.number().nullable().optional(),
         notes: z.string().nullable().optional(),
       }),
     )
@@ -380,28 +380,23 @@ export const adminRouter = router({
         updates.maxPublicFeeds = input.maxPublicFeeds;
       if (input.maxCategories !== undefined)
         updates.maxCategories = input.maxCategories;
-      if (input.apiRateLimitPerMinute !== undefined)
-        updates.apiRateLimitPerMinute = input.apiRateLimitPerMinute;
-      if (input.publicFeedRateLimitPerMinute !== undefined)
-        updates.publicFeedRateLimitPerMinute =
-          input.publicFeedRateLimitPerMinute;
       if (input.notes !== undefined) updates.notes = input.notes;
 
       if (existingLimits) {
-        // Update existing limits
+        // Update existing limits (preserve rate limit fields from database, don't update them)
         await ctx.db
           .update(schema.userLimits)
           .set(updates)
           .where(eq(schema.userLimits.userId, input.userId));
       } else {
-        // Create new custom limits
+        // Create new custom limits (rate limit fields will be null, plan limits will be used)
         await ctx.db.insert(schema.userLimits).values({
           userId: input.userId,
           maxSources: input.maxSources,
           maxPublicFeeds: input.maxPublicFeeds,
           maxCategories: input.maxCategories,
-          apiRateLimitPerMinute: input.apiRateLimitPerMinute,
-          publicFeedRateLimitPerMinute: input.publicFeedRateLimitPerMinute,
+          apiRateLimitPerMinute: null, // Rate limits always use plan limits
+          publicFeedRateLimitPerMinute: null, // Rate limits always use plan limits
           notes: input.notes || null,
         });
       }

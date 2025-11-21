@@ -42,8 +42,6 @@ function getPlanBadgeVariant(
       return "default";
     case "enterprise":
       return "default";
-    case "custom":
-      return "outline";
     default:
       return "secondary";
   }

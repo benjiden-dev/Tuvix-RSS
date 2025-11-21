@@ -17,11 +17,6 @@ export const DEFAULT_USER_PLAN = "free";
 export const ADMIN_PLAN = "enterprise";
 
 /**
- * Plan ID used when user has custom limits
- */
-export const CUSTOM_PLAN = "custom";
-
-/**
  * Well-known plan IDs (for reference/documentation)
  * These are seeded by migrations but can be changed in the database
  */
@@ -29,5 +24,4 @@ export const KNOWN_PLANS = {
   FREE: "free",
   PRO: "pro",
   ENTERPRISE: "enterprise",
-  CUSTOM: "custom",
 } as const;

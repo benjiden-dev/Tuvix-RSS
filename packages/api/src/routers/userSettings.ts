@@ -152,8 +152,7 @@ export const userSettingsRouter = router({
             maxSources: z.number().nullable(),
             maxPublicFeeds: z.number().nullable(),
             maxCategories: z.number().nullable(),
-            apiRateLimitPerMinute: z.number().nullable(),
-            publicFeedRateLimitPerMinute: z.number().nullable(),
+            // Rate limits are not customizable - they come from plan-specific bindings
             notes: z.string().nullable(),
           })
           .nullable(),
@@ -254,9 +253,7 @@ export const userSettingsRouter = router({
                 maxSources: customLimits.maxSources,
                 maxPublicFeeds: customLimits.maxPublicFeeds,
                 maxCategories: customLimits.maxCategories,
-                apiRateLimitPerMinute: customLimits.apiRateLimitPerMinute,
-                publicFeedRateLimitPerMinute:
-                  customLimits.publicFeedRateLimitPerMinute,
+                // Rate limits are not customizable - they come from plan-specific bindings
                 notes: customLimits.notes,
               }
             : null,

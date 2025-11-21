@@ -232,14 +232,6 @@ function SettingsPage() {
                         requests/min
                       </span>
                     </div>
-                    {usageData.customLimits &&
-                      (usageData.customLimits.apiRateLimitPerMinute ||
-                        usageData.customLimits
-                          .publicFeedRateLimitPerMinute) && (
-                        <p className="text-xs text-muted-foreground pt-2 border-t">
-                          Custom limits applied
-                        </p>
-                      )}
                   </div>
                 )}
               </div>

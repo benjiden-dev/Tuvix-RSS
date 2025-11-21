@@ -87,7 +87,7 @@ decrementCategoryCount(userId) → categoryCount--
 
 ```sql
 CREATE TABLE plans (
-  id TEXT PRIMARY KEY,  -- 'free', 'pro', 'enterprise', 'custom'
+  id TEXT PRIMARY KEY,  -- 'free', 'pro', 'enterprise'
   name TEXT NOT NULL,
   maxSources INTEGER NOT NULL,
   maxPublicFeeds INTEGER NOT NULL,
@@ -105,10 +105,14 @@ CREATE TABLE plans (
 
 | Plan | Max Sources | Max Public Feeds | Max Categories | API Rate/min | Feed Rate/min | Price |
 |------|-------------|------------------|----------------|--------------|--------------|-------|
-| Free | 50 | 3 | 10 | 60 | ~17 | $0 |
-| Pro | 500 | 25 | ∞ | 300 | ~167 | $9.99/mo |
-| Enterprise | 5000 | 100 | ∞ | 1000 | ~1,667 | $49.99/mo |
-| Custom | Variable | Variable | Variable | Variable | Variable | Variable |
+| Free | 25 | 2 | 10 | 60 | 2 | $0 |
+| Pro | 500 | 25 | 100 | 180 | 17 | $9.99/mo |
+| Enterprise | 10000 | 200 | ∞ | 600 | 167 | $49.99/mo |
+
+**Note**: Rate limits are enforced by plan-specific Cloudflare Workers bindings. Each plan has its own binding:
+- Free: `FREE_API_RATE_LIMIT` (60/min)
+- Pro: `PRO_API_RATE_LIMIT` (180/min)
+- Enterprise: `ENTERPRISE_API_RATE_LIMIT` (600/min)
 
 ### Custom Limit Overrides
 
@@ -120,15 +124,17 @@ CREATE TABLE userLimits (
   maxSources INTEGER,
   maxPublicFeeds INTEGER,
   maxCategories INTEGER,
-  apiRateLimitPerMinute INTEGER,
-  publicFeedRateLimitPerMinute INTEGER,
+  apiRateLimitPerMinute INTEGER,  -- Deprecated: Rate limits cannot be customized
+  publicFeedRateLimitPerMinute INTEGER,  -- Deprecated: Rate limits cannot be customized
   notes TEXT,  -- Admin notes explaining why custom limits applied
   createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-**Precedence**: Custom limits > Plan limits
+**Precedence**: Custom limits > Plan limits (for non-rate-limit fields only)
+
+**Note**: Rate limits (`apiRateLimitPerMinute`, `publicFeedRateLimitPerMinute`) cannot be customized per-user. They are enforced by plan-specific Cloudflare Workers bindings. To change a user's rate limit, change their plan.
 
 **Admin Actions**:
 - `admin.setCustomLimits(userId, {...})` - Override specific limits

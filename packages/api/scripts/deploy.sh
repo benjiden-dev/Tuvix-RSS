@@ -53,7 +53,7 @@ fi
 # Deploy
 echo "🚀 Deploying to Cloudflare Workers..."
 cd "$API_DIR"
-wrangler deploy
+npx wrangler deploy
 
 # Restore original wrangler.toml
 mv "$WRANGLER_TOML_BACKUP" "$WRANGLER_TOML"

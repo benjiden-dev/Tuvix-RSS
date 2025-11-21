@@ -460,9 +460,26 @@ binding = "DB"
 database_name = "tuvix"
 database_id = "${D1_DATABASE_ID}"  # Substituted by envsubst in CI/CD
 
-# Rate Limit Bindings
+# Plan-specific API Rate Limit Bindings
+# Each plan has its own binding with the plan's rate limit
 [[ratelimits]]
-name = "API_RATE_LIMIT"
+name = "FREE_API_RATE_LIMIT"
+namespace_id = "1003"
+simple = { limit = 60, period = 60 }  # Free plan: 60 requests per minute
+
+[[ratelimits]]
+name = "PRO_API_RATE_LIMIT"
+namespace_id = "1004"
+simple = { limit = 180, period = 60 }  # Pro plan: 180 requests per minute
+
+[[ratelimits]]
+name = "ENTERPRISE_API_RATE_LIMIT"
+namespace_id = "1005"
+simple = { limit = 600, period = 60 }  # Enterprise/admin plan: 600 requests per minute
+
+# Public Feed Rate Limiting (unchanged)
+[[ratelimits]]
+name = "FEED_RATE_LIMIT"
 namespace_id = "1001"  # User-defined positive integer
 simple = { limit = 10000, period = 60 }
 
@@ -531,7 +548,33 @@ npx wrangler secret put CORS_ORIGIN
 # Enter: https://feed.example.com (if using custom domain)
 # Or: https://your-pages-project.pages.dev (if using Pages default)
 # Multiple origins: https://feed.example.com,https://your-pages-project.pages.dev
+
+# Base URL for Better Auth (REQUIRED for production)
+# Better Auth uses this for generating callback URLs and session management
+# Must be your production API URL, NOT localhost
+npx wrangler secret put BASE_URL
+# Enter: https://api.example.com (if using custom domain)
+# Or: https://your-worker.workers.dev (if using Workers default domain)
+# Example: https://api.tuvix.app
 ```
+
+**Required for First Deployment:**
+
+⚠️ **IMPORTANT**: These secrets MUST be set before calling the `/_admin/init` endpoint in Step 6. Without these, admin initialization will fail.
+
+```bash
+# Admin initialization (REQUIRED for first deployment only)
+npx wrangler secret put ADMIN_USERNAME
+# Enter: admin (or your preferred admin username)
+
+npx wrangler secret put ADMIN_EMAIL
+# Enter: admin@example.com (use a real email address)
+
+npx wrangler secret put ADMIN_PASSWORD
+# Enter: YourSecurePassword123! (use a strong password)
+```
+
+**Security Note**: After successfully creating the admin user, change the password immediately through the admin UI. The password set here is temporary and should not be used long-term.
 
 **Optional Secrets:**
 
@@ -545,11 +588,6 @@ npx wrangler secret put BASE_URL
 # Cross-subdomain cookies (if frontend/API on different subdomains)
 npx wrangler secret put COOKIE_DOMAIN
 # Enter: example.com  (root domain, not subdomain like api.example.com)
-
-# Admin initialization (first deployment only)
-npx wrangler secret put ADMIN_USERNAME
-npx wrangler secret put ADMIN_PASSWORD
-npx wrangler secret put ADMIN_EMAIL
 ```
 
 #### Step 4: Database Migrations
@@ -590,6 +628,8 @@ npx wrangler tail
 
 #### Step 6: Initialize Admin User (First Deployment)
 
+**Prerequisites**: Ensure admin secrets are set in Step 3 (`ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`). Without these, initialization will fail.
+
 After first deployment:
 
 ```bash
@@ -605,7 +645,51 @@ curl -X POST https://api.example.com/_admin/init
 curl -X POST https://api.tuvix.app/_admin/init
 ```
 
-**Note**: Admin initialization creates a user in Better Auth's `user` table. You can then log in using Better Auth's `/api/auth/sign-in/username` endpoint.
+**Expected Responses:**
+
+**Success (201 Created):**
+```json
+{
+  "created": true,
+  "message": "Admin user 'admin' created successfully. CHANGE PASSWORD IMMEDIATELY!"
+}
+```
+
+**Already Exists (200 OK):**
+```json
+{
+  "created": false,
+  "message": "Admin user already exists"
+}
+```
+
+**Missing Credentials (200 OK):**
+```json
+{
+  "created": false,
+  "message": "Admin credentials not provided in environment variables"
+}
+```
+
+**Verify Admin User Created:**
+
+After successful initialization, verify the admin user exists:
+
+```bash
+# Check if admin user exists in database
+npx wrangler d1 execute tuvix --remote \
+  --command "SELECT id, email, username, role FROM user WHERE role = 'admin';"
+```
+
+**Note**: 
+- Admin initialization creates a user in Better Auth's `user` table with admin role and admin plan
+- You can then log in using Better Auth's `/api/auth/sign-in/username` or `/api/auth/sign-in/email` endpoint
+- **This step only needs to be done once** - subsequent deployments do not require re-initialization
+- After first login, change the password immediately through the admin UI
+
+**Troubleshooting**: See "Admin Initialization Failed" in the [Common Issues](#common-issues-1) section below.
+
+**Troubleshooting**: See "Admin Initialization Failed" in the [Common Issues](#common-issues-1) section below.
 
 ### Frontend Setup (Cloudflare Pages)
 
@@ -823,12 +907,90 @@ npx wrangler d1 execute tuvix --remote \
   - Uses `namespace_id` as a string integer (e.g., `"1001"`)
   - Uses `simple` object with `limit` and `period`
 - Ensure `namespace_id` values are unique positive integers
-- Check that bindings match the names used in code (`API_RATE_LIMIT`, `FEED_RATE_LIMIT`)
+- Check that bindings match the names used in code (`FREE_API_RATE_LIMIT`, `PRO_API_RATE_LIMIT`, `ENTERPRISE_API_RATE_LIMIT`, `FEED_RATE_LIMIT`)
 
 **Rate Limiting:**
 - **API Rate Limiting**: Per-user, per-minute limits based on subscription plan
 - **Public Feed Rate Limiting**: Per-feed owner, per-minute limits
 - Monitor: `npx wrangler tail --search "Rate limit"`
+
+**Admin Initialization Failed:**
+
+**Error: "Admin credentials not provided in environment variables"**
+```bash
+# Ensure all three admin secrets are set
+npx wrangler secret list
+# Should show: ADMIN_USERNAME, ADMIN_EMAIL, ADMIN_PASSWORD
+
+# If missing, set them:
+npx wrangler secret put ADMIN_USERNAME
+npx wrangler secret put ADMIN_EMAIL
+npx wrangler secret put ADMIN_PASSWORD
+
+# Then retry initialization
+curl -X POST https://api.example.com/_admin/init
+```
+
+**Error: "Admin user already exists"**
+- This is normal if admin was already created
+- You can skip initialization and proceed to login
+- To verify admin exists: `npx wrangler d1 execute tuvix --remote --command "SELECT id, email, username, role FROM user WHERE role = 'admin';"`
+
+**Error: "Failed to create admin user via Better Auth"**
+- Check Worker logs: `npx wrangler tail --status error`
+- Verify database migrations completed successfully
+- Ensure `BETTER_AUTH_SECRET` is set correctly
+- Check that email/username don't already exist: `npx wrangler d1 execute tuvix --remote --command "SELECT email, username FROM user;"`
+
+**Cannot Login After Initialization:**
+- Verify admin was created: Check database (see above)
+- Ensure you're using the correct credentials (from secrets you set)
+- Try both email and username login endpoints:
+  - `/api/auth/sign-in/email` (with email)
+  - `/api/auth/sign-in/username` (with username)
+- Check CORS_ORIGIN includes your frontend URL
+- Verify cookies are being set (check browser DevTools → Application → Cookies)
+
+**"CPU Time Limit Exceeded" Error During Login:**
+
+⚠️ **Important**: Cloudflare Workers does NOT differentiate between Better Auth configuration errors and actual CPU time limit exceeded errors. Both will show as "CPU Time Limit Exceeded", making debugging difficult.
+
+**Common causes that manifest as CPU exceeded errors:**
+
+1. **Missing BASE_URL Secret:**
+   ```bash
+   # Better Auth needs production BASE_URL, not localhost
+   npx wrangler secret put BASE_URL
+   # Enter: https://api.example.com (your API domain)
+   # Or: https://your-worker.workers.dev (if using Workers default domain)
+   ```
+
+2. **CORS Configuration Issues:**
+   - Ensure `CORS_ORIGIN` secret includes your frontend URL
+   - Frontend must allow requests to `/api/auth/*` endpoints
+   - Check browser console for CORS errors (may be masked by CPU error)
+   ```bash
+   # Verify CORS_ORIGIN is set correctly
+   npx wrangler secret put CORS_ORIGIN
+   # Enter: https://feed.example.com (your frontend domain)
+   ```
+
+3. **Better Auth Base URL Mismatch:**
+   - Better Auth uses `BASE_URL` or `BETTER_AUTH_URL` for generating callback URLs
+   - If not set, defaults to `http://localhost:5173` which breaks in production
+   - Set `BASE_URL` secret to your production API URL
+
+**Debugging Steps:**
+1. Check Worker logs: `npx wrangler tail --status error`
+2. Verify all required secrets are set: `npx wrangler secret list`
+3. Test CORS by checking browser Network tab for preflight OPTIONS requests
+4. Verify `BASE_URL` matches your actual API domain (not localhost)
+
+**Free Plan Optimization:**
+- Free plan has 50ms CPU limit (cannot be increased)
+- Ensure Better Auth is properly configured to avoid unnecessary CPU usage
+- Set `BASE_URL` and `CORS_ORIGIN` correctly to prevent retry loops
+- Monitor CPU usage: `npx wrangler tail` and look for patterns
 
 ---
 
@@ -858,7 +1020,9 @@ npx wrangler d1 execute tuvix --remote \
 | Binding | Type | Description |
 |---------|------|-------------|
 | `DB` | D1 | Database binding |
-| `API_RATE_LIMIT` | RateLimit | API rate limiting binding |
+| `FREE_API_RATE_LIMIT` | RateLimit | Free plan API rate limiting (60/min) |
+| `PRO_API_RATE_LIMIT` | RateLimit | Pro plan API rate limiting (180/min) |
+| `ENTERPRISE_API_RATE_LIMIT` | RateLimit | Enterprise/admin plan API rate limiting (600/min) |
 | `FEED_RATE_LIMIT` | RateLimit | Public feed rate limiting binding |
 
 **Secrets** (set via `wrangler secret put` - **not in wrangler.toml**):
@@ -867,9 +1031,9 @@ npx wrangler d1 execute tuvix --remote \
 |--------|----------|-------------|
 | `BETTER_AUTH_SECRET` | Yes | Secret for Better Auth session management (min 32 chars) |
 | `CORS_ORIGIN` | Yes | Allowed CORS origins (comma-separated) |
+| `BASE_URL` | Yes | Base URL for Better Auth (production API URL, NOT localhost). Used for callback URLs and session management. |
 | `RESEND_API_KEY` | No | Resend API key for email service (see [Email System Guide](developer/email-system.md)) |
 | `EMAIL_FROM` | No | Email sender address (must match verified domain in Resend) |
-| `BASE_URL` | No | Base URL for generating email links |
 | `COOKIE_DOMAIN` | No | Root domain for cross-subdomain cookies (e.g., "example.com") |
 | `ADMIN_USERNAME` | No | Admin username for initialization |
 | `ADMIN_PASSWORD` | No | Admin password for initialization |

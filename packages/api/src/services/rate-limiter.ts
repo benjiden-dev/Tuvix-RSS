@@ -3,6 +3,7 @@
  *
  * Implements rate limiting for API requests and public feed access.
  * Uses Cloudflare Workers rate limit bindings for Cloudflare deployments.
+ * Each plan has its own binding with the plan's rate limit.
  * Rate limiting is disabled for Docker Compose deployments.
  */
 
@@ -22,6 +23,49 @@ export interface RateLimitResult {
 export type RateLimitType = "api" | "publicFeed";
 
 // ============================================================================
+// BINDING SELECTION
+// ============================================================================
+
+/**
+ * Get the appropriate rate limit binding for a plan
+ *
+ * @param env Environment configuration
+ * @param planId User's plan ID (free, pro, enterprise)
+ * @param type Rate limit type (api or publicFeed)
+ * @returns Rate limit binding or undefined
+ */
+function getBindingForPlan(
+  env: Env,
+  planId: string,
+  type: RateLimitType,
+):
+  | Env["FREE_API_RATE_LIMIT"]
+  | Env["PRO_API_RATE_LIMIT"]
+  | Env["ENTERPRISE_API_RATE_LIMIT"]
+  | Env["FEED_RATE_LIMIT"]
+  | undefined {
+  if (type === "publicFeed") {
+    return env.FEED_RATE_LIMIT;
+  }
+
+  // API rate limiting uses plan-specific bindings
+  switch (planId) {
+    case "free":
+      return env.FREE_API_RATE_LIMIT;
+    case "pro":
+      return env.PRO_API_RATE_LIMIT;
+    case "enterprise":
+      return env.ENTERPRISE_API_RATE_LIMIT;
+    default:
+      // Fallback to free plan binding for unknown plans
+      console.warn(
+        `Unknown plan '${planId}', using free plan rate limit binding`,
+      );
+      return env.FREE_API_RATE_LIMIT;
+  }
+}
+
+// ============================================================================
 // RATE LIMITING LOGIC
 // ============================================================================
 
@@ -30,7 +74,8 @@ export type RateLimitType = "api" | "publicFeed";
  *
  * @param env Environment configuration
  * @param userId User ID
- * @param limit Maximum requests allowed in the window (user's plan limit)
+ * @param planId User's plan ID (free, pro, enterprise)
+ * @param limit Maximum requests allowed in the window (user's plan limit, for display purposes)
  * @param windowMs Window size in milliseconds
  * @param type Rate limit type (api or publicFeed)
  * @returns Rate limit result
@@ -38,6 +83,7 @@ export type RateLimitType = "api" | "publicFeed";
 export async function checkRateLimit(
   env: Env,
   userId: number,
+  planId: string,
   limit: number,
   windowMs: number,
   type: RateLimitType,
@@ -52,14 +98,14 @@ export async function checkRateLimit(
     };
   }
 
-  // Cloudflare Workers: Use rate limit bindings
+  // Cloudflare Workers: Use plan-specific rate limit bindings
   if (env.RUNTIME === "cloudflare") {
-    // Select the appropriate binding based on type
-    const binding = type === "api" ? env.API_RATE_LIMIT : env.FEED_RATE_LIMIT;
+    // Select the appropriate binding based on plan and type
+    const binding = getBindingForPlan(env, planId, type);
 
     if (!binding) {
       console.error(
-        `❌ Rate limit binding missing for type: ${type}. ` +
+        `❌ Rate limit binding missing for plan: ${planId}, type: ${type}. ` +
           `Rate limiting disabled for this request.`,
       );
       // Fallback: allow request but log warning
@@ -71,45 +117,64 @@ export async function checkRateLimit(
       };
     }
 
-    // Create a unique key for this user and rate limit type
-    // Format: "type:userId" e.g., "api:123" or "publicFeed:456"
-    // Each user gets their own counter tracked by the binding
-    const key = `${type}:${userId}`;
+    // Create a unique key for this user
+    // Since bindings are plan-specific, we only need userId as the key
+    const key = userId.toString();
 
     try {
+      const debugMode = env.RATE_LIMIT_DEBUG === "true";
+
       // Call the rate limit binding - this consumes a request and returns status
-      // The binding tracks requests per key independently
+      // The binding tracks requests per key independently and enforces the plan's limit
       const result = await binding.limit({ key });
 
-      // Check if binding's hard cap was exceeded (shouldn't happen normally)
-      if (!result.success) {
-        // User exceeded even the high binding limit (10000)
+      // Debug: Log the actual result structure
+      if (debugMode) {
+        console.log(
+          `[Rate Limit Debug] plan=${planId}, type=${type}, userId=${userId}, key=${key}, result:`,
+          JSON.stringify(result, null, 2),
+        );
+      }
+
+      // Validate result structure
+      if (!result || typeof result !== "object") {
+        console.error(
+          `❌ Rate limit binding returned invalid result for ${key}:`,
+          result,
+        );
+        // Fallback: allow request but log error
         return {
-          allowed: false,
+          allowed: true,
           limit,
-          remaining: 0,
-          resetAt: new Date(result.reset * 1000),
+          remaining: limit,
+          resetAt: new Date(Date.now() + windowMs),
         };
       }
 
-      // The binding has a high limit (10000) to prevent abuse
-      // Calculate how many requests user has made (including this one)
-      // result.remaining is how many requests are left in the binding's limit
-      const bindingLimit = result.limit; // Should be 10000
-      const bindingUsed = bindingLimit - result.remaining; // Total requests made (including this one)
+      // Cloudflare bindings only return { success: boolean }
+      // success: true = request allowed, success: false = rate limit exceeded
+      const allowed = result.success !== false;
 
-      // Enforce user's plan-specific limit
-      // If user has exceeded their plan limit, deny (even though binding allowed it)
-      const allowed = bindingUsed <= limit;
+      // Calculate reset time (60 seconds from now, since bindings use 60s windows)
+      const resetAt = new Date(Date.now() + windowMs);
 
-      // Calculate remaining requests for user based on their plan limit
-      const userRemaining = Math.max(0, limit - bindingUsed);
+      // For display purposes, estimate remaining requests
+      // Since bindings don't return usage details, we use a conservative estimate
+      const remaining = allowed ? Math.max(0, limit - 1) : 0;
+
+      // Log when rate limit is hit or in debug mode
+      if (debugMode || !allowed) {
+        console.log(
+          `[Rate Limit] plan=${planId}, type=${type}, userId=${userId}, ` +
+            `limit=${limit}, allowed=${allowed}, resetAt=${resetAt.toISOString()}`,
+        );
+      }
 
       return {
         allowed,
         limit,
-        remaining: userRemaining,
-        resetAt: new Date(result.reset * 1000), // Convert to milliseconds
+        remaining,
+        resetAt,
       };
     } catch (error) {
       console.error(`Error checking rate limit for ${key}:`, error);
@@ -137,15 +202,17 @@ export async function checkRateLimit(
  *
  * @param env Environment configuration
  * @param userId User ID
- * @param limitPerMinute Max API requests per minute
+ * @param planId User's plan ID (free, pro, enterprise)
+ * @param limitPerMinute Max API requests per minute (for display purposes)
  * @returns Rate limit result
  */
 export async function checkApiRateLimit(
   env: Env,
   userId: number,
+  planId: string,
   limitPerMinute: number,
 ): Promise<RateLimitResult> {
-  return checkRateLimit(env, userId, limitPerMinute, 60 * 1000, "api");
+  return checkRateLimit(env, userId, planId, limitPerMinute, 60 * 1000, "api");
 }
 
 /**
@@ -153,13 +220,22 @@ export async function checkApiRateLimit(
  *
  * @param env Environment configuration
  * @param userId User ID
- * @param limitPerMinute Max public feed requests per minute
+ * @param planId User's plan ID (free, pro, enterprise) - not used for feed limits but kept for consistency
+ * @param limitPerMinute Max public feed requests per minute (for display purposes)
  * @returns Rate limit result
  */
 export async function checkPublicFeedRateLimit(
   env: Env,
   userId: number,
+  planId: string,
   limitPerMinute: number,
 ): Promise<RateLimitResult> {
-  return checkRateLimit(env, userId, limitPerMinute, 60 * 1000, "publicFeed");
+  return checkRateLimit(
+    env,
+    userId,
+    planId,
+    limitPerMinute,
+    60 * 1000,
+    "publicFeed",
+  );
 }

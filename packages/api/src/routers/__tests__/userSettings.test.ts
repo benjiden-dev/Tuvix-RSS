@@ -460,8 +460,7 @@ describe("User Settings Router", () => {
       expect(result.customLimits?.maxSources).toBe(1000);
       expect(result.customLimits?.maxPublicFeeds).toBe(50);
       expect(result.customLimits?.maxCategories).toBeNull();
-      expect(result.customLimits?.apiRateLimitPerMinute).toBe(500);
-      expect(result.customLimits?.publicFeedRateLimitPerMinute).toBe(17);
+      // Rate limits are not customizable - they come from plan-specific bindings
       expect(result.customLimits?.notes).toBe("Beta tester limits");
     });
 

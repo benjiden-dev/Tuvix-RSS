@@ -36,7 +36,14 @@ describe("Rate Limiter Service", () => {
       const windowMs = 60 * 1000; // 1 minute
 
       // Node.js runtime (Docker Compose) has rate limiting disabled
-      const result = await checkRateLimit(env, userId, limit, windowMs, "api");
+      const result = await checkRateLimit(
+        env,
+        userId,
+        "free",
+        limit,
+        windowMs,
+        "api",
+      );
       expect(result.allowed).toBe(true);
       expect(result.limit).toBe(limit);
       expect(result.remaining).toBe(limit);
@@ -53,6 +60,7 @@ describe("Rate Limiter Service", () => {
         const result = await checkRateLimit(
           env,
           userId,
+          "free",
           limit,
           windowMs,
           "api",
@@ -68,11 +76,25 @@ describe("Rate Limiter Service", () => {
       const windowMs = 60 * 1000;
 
       // All requests return same values (rate limiting disabled)
-      const result1 = await checkRateLimit(env, userId, limit, windowMs, "api");
+      const result1 = await checkRateLimit(
+        env,
+        userId,
+        "free",
+        limit,
+        windowMs,
+        "api",
+      );
       expect(result1.allowed).toBe(true);
       expect(result1.remaining).toBe(limit);
 
-      const result2 = await checkRateLimit(env, userId, limit, windowMs, "api");
+      const result2 = await checkRateLimit(
+        env,
+        userId,
+        "free",
+        limit,
+        windowMs,
+        "api",
+      );
       expect(result2.allowed).toBe(true);
       expect(result2.remaining).toBe(limit);
     });
@@ -86,6 +108,7 @@ describe("Rate Limiter Service", () => {
       const apiResult = await checkRateLimit(
         env,
         userId,
+        "free",
         limit,
         windowMs,
         "api",
@@ -95,6 +118,7 @@ describe("Rate Limiter Service", () => {
       const feedResult = await checkRateLimit(
         env,
         userId,
+        "free",
         limit,
         windowMs,
         "publicFeed",
@@ -112,6 +136,7 @@ describe("Rate Limiter Service", () => {
       const user1Result = await checkRateLimit(
         env,
         user1,
+        "free",
         limit,
         windowMs,
         "api",
@@ -121,6 +146,7 @@ describe("Rate Limiter Service", () => {
       const user2Result = await checkRateLimit(
         env,
         user2,
+        "free",
         limit,
         windowMs,
         "api",
@@ -134,7 +160,12 @@ describe("Rate Limiter Service", () => {
       const userId = 10;
       const limitPerMinute = 60;
 
-      const result = await checkApiRateLimit(env, userId, limitPerMinute);
+      const result = await checkApiRateLimit(
+        env,
+        userId,
+        "free",
+        limitPerMinute,
+      );
 
       expect(result.allowed).toBe(true);
       expect(result.limit).toBe(60);
@@ -147,7 +178,12 @@ describe("Rate Limiter Service", () => {
 
       // Make many requests - all allowed (rate limiting disabled for Node.js)
       for (let i = 0; i < 10; i++) {
-        const result = await checkApiRateLimit(env, userId, limitPerMinute);
+        const result = await checkApiRateLimit(
+          env,
+          userId,
+          "free",
+          limitPerMinute,
+        );
         expect(result.allowed).toBe(true);
         expect(result.remaining).toBe(limitPerMinute);
       }
@@ -162,6 +198,7 @@ describe("Rate Limiter Service", () => {
       const result = await checkPublicFeedRateLimit(
         env,
         userId,
+        "free",
         limitPerMinute,
       );
 
@@ -179,6 +216,7 @@ describe("Rate Limiter Service", () => {
         const result = await checkPublicFeedRateLimit(
           env,
           userId,
+          "free",
           limitPerMinute,
         );
         expect(result.allowed).toBe(true);
@@ -193,6 +231,7 @@ describe("Rate Limiter Service", () => {
       const result = await checkPublicFeedRateLimit(
         env,
         userId,
+        "free",
         limitPerMinute,
       );
 
@@ -218,6 +257,7 @@ describe("Rate Limiter Service", () => {
       const result = await checkRateLimit(
         cloudflareEnv,
         userId,
+        "free",
         limit,
         windowMs,
         "api",
@@ -240,6 +280,7 @@ describe("Rate Limiter Service", () => {
       const result = await checkRateLimit(
         nodejsEnv,
         userId,
+        "free",
         limit,
         windowMs,
         "api",
@@ -261,6 +302,7 @@ describe("Rate Limiter Service", () => {
       const result = await checkRateLimit(
         defaultEnv,
         userId,
+        "free",
         limit,
         windowMs,
         "api",
@@ -276,11 +318,25 @@ describe("Rate Limiter Service", () => {
       const windowMs = 60 * 1000;
 
       // Node.js runtime always allows (rate limiting disabled)
-      const result1 = await checkRateLimit(env, userId, limit, windowMs, "api");
+      const result1 = await checkRateLimit(
+        env,
+        userId,
+        "free",
+        limit,
+        windowMs,
+        "api",
+      );
       expect(result1.allowed).toBe(true);
       expect(result1.remaining).toBe(limit);
 
-      const result2 = await checkRateLimit(env, userId, limit, windowMs, "api");
+      const result2 = await checkRateLimit(
+        env,
+        userId,
+        "free",
+        limit,
+        windowMs,
+        "api",
+      );
       expect(result2.allowed).toBe(true);
       expect(result2.remaining).toBe(limit);
     });
@@ -295,6 +351,7 @@ describe("Rate Limiter Service", () => {
         const result = await checkRateLimit(
           env,
           userId,
+          "free",
           limit,
           windowMs,
           "api",
