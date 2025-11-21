@@ -56,10 +56,10 @@ vi.mock("@/hooks/use-mobile", () => ({
   useIsMobile: () => false,
 }));
 
-// Mock FeedAvatar component
+// Mock FeedAvatar component - render as icon only, no text (matches actual component behavior)
 vi.mock("@/components/app/feed-avatar", () => ({
-  FeedAvatar: ({ feedName }: { feedName: string }) => (
-    <div data-testid="feed-avatar">{feedName}</div>
+  FeedAvatar: () => (
+    <div data-testid="feed-avatar" aria-hidden="true" className="shrink-0" />
   ),
 }));
 
@@ -283,6 +283,7 @@ describe("AppSidebar", () => {
       expect(screen.getByText("All Subscriptions")).toBeInTheDocument();
 
       // Should show top 10 subscriptions (Feed 1 through Feed 10)
+      // FeedAvatar mock renders as icon only, so text only appears in the span
       for (let i = 1; i <= 10; i++) {
         expect(screen.getByText(`Feed ${i}`)).toBeInTheDocument();
       }
