@@ -92,6 +92,20 @@ jobs:
           echo "## API Deployment" >> $GITHUB_STEP_SUMMARY
           echo "- **URL:** $API_URL" >> $GITHUB_STEP_SUMMARY
 
+      - name: Prepare D1 migrations
+        if: success()
+        working-directory: packages/api
+        run: |
+          # Copy migrations from drizzle/ to migrations/ (Wrangler expects migrations/ folder)
+          # This matches the logic in scripts/migrate-d1.sh lines 56-57
+          mkdir -p migrations
+          cp drizzle/*.sql migrations/ 2>/dev/null || true
+          if [ ! "$(ls -A migrations 2>/dev/null)" ]; then
+            echo "::error::No migration files found in drizzle/ directory"
+            exit 1
+          fi
+          echo "✅ Prepared $(ls migrations/*.sql | wc -l) migration file(s)"
+
       - name: Run database migrations
         if: success()
         uses: cloudflare/wrangler-action@v3
@@ -103,6 +117,13 @@ jobs:
           wranglerVersion: "3"
         env:
           D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+
+      - name: Cleanup migrations folder
+        if: always()
+        working-directory: packages/api
+        run: |
+          rm -rf migrations
+          echo "✅ Cleaned up migrations folder"
 
   deploy-app:
     name: Deploy App to Cloudflare Pages
