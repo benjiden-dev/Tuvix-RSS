@@ -214,9 +214,20 @@ jobs:
           echo "version=$DEPLOYMENT_VERSION" >> $GITHUB_OUTPUT
           echo "Deployment version: $DEPLOYMENT_VERSION (commit: ${DEPLOYMENT_VERSION:0:7})"
 
+      - name: Get dev API URL
+        id: api-url
+        run: |
+          # Get the base worker name from wrangler.toml and append -dev
+          BASE_NAME=$(grep -m 1 '^name =' packages/api/wrangler.toml | cut -d'"' -f2)
+          WORKER_NAME="${BASE_NAME}-dev"
+          API_URL="https://${WORKER_NAME}.workers.dev/trpc"
+          echo "url=$API_URL" >> $GITHUB_OUTPUT
+          echo "API_URL=$API_URL" >> $GITHUB_ENV
+          echo "Using API URL: $API_URL"
+
       - name: Build App
         env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+          VITE_API_URL: ${{ env.API_URL }}
           VITE_SENTRY_RELEASE: ${{ steps.deployment-version.outputs.version }}
         run: pnpm run build:app
 
