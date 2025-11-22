@@ -1,0 +1,52 @@
+name: 'Substitute D1 Database ID'
+description: 'Substitutes D1_DATABASE_ID placeholder in wrangler.toml'
+
+inputs:
+  wrangler-toml-path:
+    description: 'Path to wrangler.toml file'
+    required: false
+    default: 'packages/api/wrangler.toml'
+  d1-database-id:
+    description: 'D1 Database ID secret'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Substitute D1 database ID
+      shell: bash
+      env:
+        D1_DATABASE_ID: ${{ inputs.d1-database-id }}
+      run: |
+        # Verify secret is set (without leaking value)
+        if [ -z "$D1_DATABASE_ID" ]; then
+          echo "::error::D1_DATABASE_ID secret is not set"
+          exit 1
+        fi
+        
+        # Verify placeholder exists in file
+        if ! grep -q '\${D1_DATABASE_ID}' ${{ inputs.wrangler-toml-path }}; then
+          echo "::error::Placeholder \${D1_DATABASE_ID} not found in wrangler.toml"
+          exit 1
+        fi
+        
+        # Perform substitution with explicit variable list
+        envsubst '$D1_DATABASE_ID' < ${{ inputs.wrangler-toml-path }} > ${{ inputs.wrangler-toml-path }}.tmp
+        
+        # Verify substitution succeeded (placeholder should be gone)
+        if grep -q '\${D1_DATABASE_ID}' ${{ inputs.wrangler-toml-path }}.tmp; then
+          echo "::error::Substitution failed - placeholder still present"
+          exit 1
+        fi
+        
+        # Verify database_id is not empty after substitution
+        if grep -q 'database_id = ""' ${{ inputs.wrangler-toml-path }}.tmp; then
+          echo "::error::database_id is empty after substitution"
+          exit 1
+        fi
+        
+        # Move substituted file into place
+        mv ${{ inputs.wrangler-toml-path }}.tmp ${{ inputs.wrangler-toml-path }}
+        
+        echo "✅ Successfully substituted D1_DATABASE_ID (value not logged for security)"
+

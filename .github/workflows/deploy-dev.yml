@@ -35,19 +35,11 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Type check API
         run: pnpm run type-check:api
@@ -59,58 +51,25 @@ jobs:
         run: pnpm run build:api
 
       - name: Substitute D1 database ID
-        env:
-          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
-        run: |
-          # Verify secret is set (without leaking value)
-          if [ -z "$D1_DATABASE_ID" ]; then
-            echo "::error::D1_DATABASE_ID secret is not set"
-            exit 1
-          fi
-          
-          # Verify placeholder exists in file
-          if ! grep -q '\${D1_DATABASE_ID}' packages/api/wrangler.toml; then
-            echo "::error::Placeholder \${D1_DATABASE_ID} not found in wrangler.toml"
-            exit 1
-          fi
-          
-          # Perform substitution with explicit variable list
-          envsubst '$D1_DATABASE_ID' < packages/api/wrangler.toml > packages/api/wrangler.toml.tmp
-          
-          # Verify substitution succeeded (placeholder should be gone)
-          if grep -q '\${D1_DATABASE_ID}' packages/api/wrangler.toml.tmp; then
-            echo "::error::Substitution failed - placeholder still present"
-            exit 1
-          fi
-          
-          # Verify database_id is not empty after substitution
-          if grep -q 'database_id = ""' packages/api/wrangler.toml.tmp; then
-            echo "::error::database_id is empty after substitution"
-            exit 1
-          fi
-          
-          # Move substituted file into place
-          mv packages/api/wrangler.toml.tmp packages/api/wrangler.toml
-          
-          echo "✅ Successfully substituted D1_DATABASE_ID (value not logged for security)"
+        uses: ./.github/actions/substitute-d1-database-id
+        with:
+          d1-database-id: ${{ secrets.D1_DATABASE_ID }}
 
       - name: Get worker name and override for dev
         id: worker-name
+        uses: ./.github/actions/get-worker-name
+        with:
+          suffix: '-dev'
+
+      - name: Override worker name in wrangler.toml
         run: |
-          # Get the first 'name =' line (worker name), not rate limit binding names
-          BASE_NAME=$(grep -m 1 '^name =' packages/api/wrangler.toml | cut -d'"' -f2)
-          WORKER_NAME="${BASE_NAME}-dev"
-          
           cd packages/api
           # Backup original
           cp wrangler.toml wrangler.toml.backup
-          # Replace name line with dev suffix (works on both Linux and macOS)
-          sed -i.bak "s/^name = \".*\"/name = \"$WORKER_NAME\"/" wrangler.toml
+          # Replace name line with dev suffix
+          sed -i.bak "s/^name = \".*\"/name = \"${{ steps.worker-name.outputs.name }}\"/" wrangler.toml
           rm -f wrangler.toml.bak
-          
-          echo "name=$WORKER_NAME" >> $GITHUB_OUTPUT
-          echo "WORKER_NAME=$WORKER_NAME" >> $GITHUB_ENV
-          echo "Deploying to Worker: $WORKER_NAME (dev)"
+          echo "Deploying to Worker: ${{ steps.worker-name.outputs.name }} (dev)"
 
       - name: Get deployment version
         id: deployment-version
@@ -122,12 +81,9 @@ jobs:
       - name: Set Sentry Release (Backend)
         if: env.SENTRY_DSN != ''
         run: |
-          # Only set if SENTRY_DSN secret exists (Sentry is configured)
-          # Set secret using wrangler with stdin (non-interactive)
           DEPLOYMENT_VERSION="${{ steps.deployment-version.outputs.version }}"
           cd packages/api
-          # Use --name flag to target the correct worker
-          echo "$DEPLOYMENT_VERSION" | npx wrangler secret put SENTRY_RELEASE --name "$WORKER_NAME"
+          echo "$DEPLOYMENT_VERSION" | npx wrangler secret put SENTRY_RELEASE --name "${{ steps.worker-name.outputs.name }}"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -142,13 +98,12 @@ jobs:
           command: deploy
           wranglerVersion: "3"
         env:
-          # Override worker name if dev-specific name is provided
           WRANGLER_SEND_METRICS: "false"
 
       - name: Output API deployment URL
         if: success()
         run: |
-          API_URL="https://${WORKER_NAME}.workers.dev"
+          API_URL="https://${{ steps.worker-name.outputs.name }}.workers.dev"
           echo "API_URL=$API_URL" >> $GITHUB_OUTPUT
           echo "## API Deployment (Dev)" >> $GITHUB_STEP_SUMMARY
           echo "- **URL:** $API_URL" >> $GITHUB_STEP_SUMMARY
@@ -187,19 +142,11 @@ jobs:
         with:
           ref: ${{ github.event.inputs.branch || github.ref }}
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Node.js and pnpm
+        uses: ./.github/actions/setup
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+          pnpm-version: ${{ env.PNPM_VERSION }}
 
       - name: Type check App
         run: pnpm run type-check:app
@@ -216,11 +163,14 @@ jobs:
 
       - name: Get dev API URL
         id: api-url
+        uses: ./.github/actions/get-worker-name
+        with:
+          suffix: '-dev'
+
+      - name: Set API URL
+        id: api-url-set
         run: |
-          # Get the base worker name from wrangler.toml and append -dev
-          BASE_NAME=$(grep -m 1 '^name =' packages/api/wrangler.toml | cut -d'"' -f2)
-          WORKER_NAME="${BASE_NAME}-dev"
-          API_URL="https://${WORKER_NAME}.workers.dev/trpc"
+          API_URL="https://${{ steps.api-url.outputs.name }}.workers.dev/trpc"
           echo "url=$API_URL" >> $GITHUB_OUTPUT
           echo "API_URL=$API_URL" >> $GITHUB_ENV
           echo "Using API URL: $API_URL"
@@ -262,12 +212,9 @@ jobs:
 
       - name: Get worker name
         id: worker-name
-        run: |
-          # Get the first 'name =' line (worker name), not rate limit binding names
-          BASE_NAME=$(grep -m 1 '^name =' packages/api/wrangler.toml | cut -d'"' -f2)
-          WORKER_NAME="${BASE_NAME}-dev"
-          echo "name=$WORKER_NAME" >> $GITHUB_OUTPUT
-          echo "WORKER_NAME=$WORKER_NAME" >> $GITHUB_ENV
+        uses: ./.github/actions/get-worker-name
+        with:
+          suffix: '-dev'
 
       - name: Deployment Summary
         run: |
@@ -281,7 +228,7 @@ jobs:
           echo "| Service | Status | URL |" >> $GITHUB_STEP_SUMMARY
           echo "|---------|--------|-----|" >> $GITHUB_STEP_SUMMARY
           if [ "${{ needs.deploy-api.result }}" == "success" ]; then
-            echo "| API | ✅ Success | https://${WORKER_NAME}.workers.dev |" >> $GITHUB_STEP_SUMMARY
+            echo "| API | ✅ Success | https://${{ steps.worker-name.outputs.name }}.workers.dev |" >> $GITHUB_STEP_SUMMARY
           else
             echo "| API | ❌ Failed | - |" >> $GITHUB_STEP_SUMMARY
           fi
@@ -296,9 +243,8 @@ jobs:
           echo "### Quick Links" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "${{ needs.deploy-api.result }}" == "success" ]; then
-            echo "- [API Worker](https://${WORKER_NAME}.workers.dev)" >> $GITHUB_STEP_SUMMARY
+            echo "- [API Worker](https://${{ steps.worker-name.outputs.name }}.workers.dev)" >> $GITHUB_STEP_SUMMARY
           fi
           if [ "${{ needs.deploy-app.result }}" == "success" ]; then
             echo "- [App Pages](https://${{ secrets.CLOUDFLARE_PAGES_PROJECT_NAME }}.pages.dev)" >> $GITHUB_STEP_SUMMARY
           fi
-

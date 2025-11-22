@@ -4,7 +4,16 @@
  * Tests for tRPC setup including Sentry middleware integration
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
+import {
+  describe,
+  it,
+  expect,
+  vi,
+  beforeEach,
+  afterEach,
+  beforeAll,
+  afterAll,
+} from "vitest";
 import { router, publicProcedure, rateLimitedProcedure } from "../init";
 import { TRPCError } from "@trpc/server";
 import { createTestDb, seedTestUser, cleanupTestDb } from "@/test/setup";

@@ -8,7 +8,7 @@ import type { Env } from "@/types";
 import Database from "better-sqlite3";
 import { existsSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { join, resolve } from "path";
 
 describe("createDatabase", () => {
   const createdDbs: Array<{
@@ -42,16 +42,20 @@ describe("createDatabase", () => {
 
   describe("Node.js runtime", () => {
     it("should create database with default path when DATABASE_PATH is not set", () => {
+      const defaultPath = "./data/tuvix.db";
+      const resolvedPath = resolve(defaultPath);
       const env: Env = {
         RUNTIME: "nodejs",
         BETTER_AUTH_SECRET: "test-secret",
       };
 
       const db = createDatabase(env);
-      createdDbs.push({ db, path: "./data/tuvix.db" });
+      createdDbs.push({ db, path: resolvedPath });
 
       expect(db).toBeDefined();
       expect(db.$client).toBeDefined();
+      // Verify the database file was actually created at the expected path
+      expect(existsSync(resolvedPath)).toBe(true);
     });
 
     it("should create database with custom DATABASE_PATH", () => {
@@ -118,16 +122,20 @@ describe("createDatabase", () => {
     });
 
     it("should use nodejs runtime when RUNTIME is undefined", () => {
+      const defaultPath = "./data/tuvix.db";
+      const resolvedPath = resolve(defaultPath);
       const env: Env = {
         BETTER_AUTH_SECRET: "test-secret",
         // RUNTIME is undefined, should default to nodejs
       };
 
       const db = createDatabase(env);
-      createdDbs.push({ db, path: "./data/tuvix.db" });
+      createdDbs.push({ db, path: resolvedPath });
 
       expect(db).toBeDefined();
       expect(db.$client).toBeDefined();
+      // Verify the database file was actually created at the expected path
+      expect(existsSync(resolvedPath)).toBe(true);
     });
   });
 
