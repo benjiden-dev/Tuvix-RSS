@@ -5,7 +5,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render } from "@testing-library/react";
 import * as Sentry from "@sentry/react";
 
 // Mock Sentry before importing main
