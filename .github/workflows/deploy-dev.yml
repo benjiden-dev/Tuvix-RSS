@@ -94,6 +94,16 @@ jobs:
           
           echo "✅ Successfully substituted D1_DATABASE_ID (value not logged for security)"
 
+      - name: Check if dev worker name override is set
+        id: check-dev-worker-name
+        run: |
+          # Check if secret exists and is not empty
+          if [ -n "${{ secrets.CLOUDFLARE_WORKER_NAME_DEV }}" ]; then
+            echo "override=true" >> $GITHUB_OUTPUT
+          else
+            echo "override=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Get worker name
         id: worker-name
         run: |
@@ -108,7 +118,7 @@ jobs:
           echo "Deploying to Worker: $WORKER_NAME"
 
       - name: Override worker name for dev (if specified)
-        if: secrets.CLOUDFLARE_WORKER_NAME_DEV != ''
+        if: steps.check-dev-worker-name.outputs.override == 'true'
         run: |
           # Temporarily override worker name in wrangler.toml for dev deployment
           WORKER_NAME="${{ secrets.CLOUDFLARE_WORKER_NAME_DEV }}"
@@ -164,7 +174,7 @@ jobs:
           echo "- **Commit:** \`${GITHUB_SHA:0:7}\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Restore original wrangler.toml
-        if: always() && secrets.CLOUDFLARE_WORKER_NAME_DEV != ''
+        if: always() && steps.check-dev-worker-name.outputs.override == 'true'
         run: |
           cd packages/api
           if [ -f wrangler.toml.backup ]; then
