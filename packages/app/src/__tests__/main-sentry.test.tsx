@@ -99,7 +99,7 @@ describe("Sentry Initialization", () => {
 
     const targets = import.meta.env.VITE_SENTRY_TRACE_PROPAGATION_TARGETS;
     if (targets) {
-      const targetList = targets.split(",").map((t) => t.trim());
+      const targetList = targets.split(",").map((t: string) => t.trim());
       expect(targetList).toContain("https://api1.example.com");
       expect(targetList).toContain("https://api2.example.com");
     }
