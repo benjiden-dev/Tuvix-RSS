@@ -11,24 +11,33 @@ export default defineConfig([
     "dev-dist",
     "node_modules",
     "generated",
+    "coverage",
+    "coverage/**",
+    "**/coverage/**",
     "**/*.gen.*",
     "**/__tests__/**",
     "**/*.test.ts",
     "**/*.test.tsx",
+    "scripts/**/*.mjs",
   ]),
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
   {
     files: ["**/*.{ts,tsx}"],
-    extends: [
-      js.configs.recommended,
-      ...tseslint.configs.recommended,
-      reactHooks.configs["recommended-latest"],
-      reactRefresh.configs.vite,
-    ],
+    plugins: {
+      "react-hooks": reactHooks,
+      "react-refresh": reactRefresh,
+    },
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
     },
     rules: {
+      ...reactHooks.configs.recommended.rules,
+      "react-refresh/only-export-components": [
+        "warn",
+        { allowConstantExport: true },
+      ],
       // Detect explicit any types
       "@typescript-eslint/no-explicit-any": "error",
       // Detect unsafe any usage (disabled for now due to tRPC type inference issues)
@@ -52,7 +61,7 @@ export default defineConfig([
       "@typescript-eslint/ban-ts-comment": "off",
     },
   },
-  // Suppress warnings in UI library components
+  // Suppress warnings in UI library components (third-party library)
   {
     files: ["src/components/animate-ui/**/*.tsx", "src/components/ui/**/*.tsx"],
     rules: {
@@ -63,6 +72,13 @@ export default defineConfig([
       "@typescript-eslint/no-unsafe-return": "off",
       "@typescript-eslint/no-unsafe-argument": "off",
       "react-refresh/only-export-components": "off",
+      // Disable React Compiler rules for third-party library
+      "react-hooks/purity": "off",
+      "react-hooks/static-components": "off",
+      "react-hooks/preserve-manual-memoization": "off",
+      "react-hooks/refs": "off",
+      "react-hooks/immutability": "off",
+      "react-hooks/set-state-in-effect": "off",
     },
   },
   // Allow any in test files for mocks
