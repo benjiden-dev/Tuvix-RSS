@@ -13,11 +13,6 @@ vi.mock("motion/react", () => ({
       </div>
     ),
   },
-  AnimatePresence: ({ children, mode }: any) => (
-    <div data-testid="animate-presence" data-mode={mode}>
-      {children}
-    </div>
-  ),
 }));
 
 // Mock ArticleItem
@@ -127,13 +122,6 @@ describe("AnimatedArticleList", () => {
     const container = containers[0]; // First one is the wrapper
     expect(container).toHaveClass("custom-class");
     expect(container).toHaveClass("flex", "flex-col", "gap-4");
-  });
-
-  it("renders AnimatePresence with correct mode", () => {
-    render(<AnimatedArticleList articles={mockArticles} />);
-
-    const animatePresence = screen.getByTestId("animate-presence");
-    expect(animatePresence).toHaveAttribute("data-mode", "popLayout");
   });
 
   it("handles newArticleIds prop", () => {
