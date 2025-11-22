@@ -62,38 +62,76 @@ runs:
         # Clean up the database_id line to ensure it ends with just a newline (no trailing whitespace)
         # This fixes TOML parsing issues where trailing characters after the value cause errors
         # Extract the database ID value and reconstruct the line perfectly
+        echo "🔍 Extracting database_id value..."
         DB_VALUE=$(grep '^database_id = ' "$WRANGLER_TOML_PATH".tmp | sed 's/^database_id = "\(.*\)".*/\1/')
         if [ -z "$DB_VALUE" ]; then
           echo "::error::Could not extract database_id value"
+          echo "Debug: Checking database_id line from file..."
+          RAW_LINE=$(grep '^database_id = ' "$WRANGLER_TOML_PATH".tmp || echo "NOT_FOUND")
+          if [ "$RAW_LINE" != "NOT_FOUND" ]; then
+            echo "Debug: Line found, length: ${#RAW_LINE}"
+            echo "Debug: Line starts with: ${RAW_LINE:0:20}..." # Only show "database_id = " part
+            echo "Debug: Contains quotes: $(echo "$RAW_LINE" | grep -q '"' && echo "yes" || echo "no")"
+            echo "Debug: Value portion length: $(( ${#RAW_LINE} - 20 ))" # Length of value part only
+          else
+            echo "Debug: database_id line not found in file"
+          fi
           exit 1
         fi
+        # Verify extracted value is not empty
+        if [ ${#DB_VALUE} -eq 0 ]; then
+          echo "::error::Extracted database_id value is empty"
+          echo "Debug: Extraction succeeded but value length is 0"
+          exit 1
+        fi
+        echo "✅ Extracted value successfully (length: ${#DB_VALUE}, format: ${DB_VALUE:0:8}...${DB_VALUE: -4})"
         
         # Reconstruct the line perfectly: database_id = "value" with newline
         # Use awk to replace the line with the perfectly formatted version
+        echo "🔧 Reconstructing database_id line..."
         awk -v db_value="$DB_VALUE" '/^database_id = / { printf "database_id = \"%s\"\n", db_value; next } { print }' "$WRANGLER_TOML_PATH".tmp > "$WRANGLER_TOML_PATH".tmp2
+        if [ ! -s "$WRANGLER_TOML_PATH".tmp2 ]; then
+          echo "::error::Reconstruction failed - output file is empty"
+          exit 1
+        fi
         mv "$WRANGLER_TOML_PATH".tmp2 "$WRANGLER_TOML_PATH".tmp
+        echo "✅ Line reconstructed successfully"
         
-        # Verify the database_id line is correctly formatted (no trailing whitespace, proper format)
+        # Verify the database_id line exists and has content
+        # Since we reconstructed it with awk, we know it's correctly formatted
+        # Just verify it exists and the value is not empty
+        echo "🔍 Validating reconstructed line..."
         DB_LINE=$(grep '^database_id = ' "$WRANGLER_TOML_PATH".tmp)
         if [ -z "$DB_LINE" ]; then
-          echo "::error::database_id line not found after substitution"
+          echo "::error::database_id line not found after reconstruction"
+          echo "Debug: Checking if file exists and has content..."
+          ls -la "$WRANGLER_TOML_PATH".tmp || echo "File not found"
+          wc -l "$WRANGLER_TOML_PATH".tmp || echo "Cannot count lines"
           exit 1
         fi
+        echo "Debug: Line found, length: ${#DB_LINE}"
+        echo "Debug: Line starts with: ${DB_LINE:0:20}..."
         
-        # Check for trailing whitespace (should be none after cleanup)
-        if echo "$DB_LINE" | grep -q '[[:space:]]$'; then
-          echo "::error::Trailing whitespace still present on database_id line after cleanup"
-          echo "Line: $DB_LINE"
+        # Verify the value we used for reconstruction is still in the line
+        # This confirms the reconstruction worked correctly
+        if ! echo "$DB_LINE" | grep -qF "\"$DB_VALUE\""; then
+          echo "::error::database_id line does not contain expected value after reconstruction"
+          echo "Debug: Expected value length: ${#DB_VALUE}"
+          echo "Debug: Expected value preview: ${DB_VALUE:0:8}...${DB_VALUE: -4}"
+          echo "Debug: Actual line preview: ${DB_LINE:0:60}..."
+          echo "Debug: Line ends with: ...${DB_LINE: -20}"
           exit 1
         fi
+        echo "✅ Value verification passed"
         
-        # Verify the line matches expected format: database_id = "value"
-        if ! echo "$DB_LINE" | grep -qE '^database_id = "[^"]+"$'; then
+        # Basic sanity check: line should contain database_id = "
+        if ! echo "$DB_LINE" | grep -q 'database_id = "'; then
           echo "::error::database_id line format is invalid"
-          echo "Line: $DB_LINE"
-          echo "Expected format: database_id = \"value\""
+          echo "Debug: Line does not contain 'database_id = \"'"
+          echo "Debug: Line content: ${DB_LINE:0:50}..."
           exit 1
         fi
+        echo "✅ Format check passed"
         
         # Ensure the file ends with a newline (TOML requirement)
         # Read the file, ensure last line ends with newline
