@@ -37,7 +37,7 @@ vi.mock("@/lib/auth-client", () => ({
 }));
 
 // Import the route module to test beforeLoad
-const routeModule = await import("../route");
+const routeModule = await import("../../routes/app/route");
 
 describe("App Route - Offline Navigation", () => {
   beforeEach(() => {

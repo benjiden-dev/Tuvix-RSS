@@ -48,7 +48,7 @@ describe("DebugSentryPage", () => {
     vi.resetModules();
 
     // Import the route after mock is set up
-    const { Route } = await import("../debug-sentry");
+    const { Route } = await import("../../routes/debug-sentry");
     DebugSentryPage = Route.options.component;
 
     // Mock fetch
@@ -107,7 +107,7 @@ describe("DebugSentryPage", () => {
     });
 
     // Now import the component - it will read the env without DSN
-    const { Route } = await import("../debug-sentry");
+    const { Route } = await import("../../routes/debug-sentry");
     const ComponentWithoutSentry = Route.options.component;
 
     render(<ComponentWithoutSentry />);
@@ -255,7 +255,7 @@ describe("DebugSentryPage - Error Messages", () => {
     });
 
     vi.resetModules();
-    const { Route } = await import("../debug-sentry");
+    const { Route } = await import("../../routes/debug-sentry");
     DebugSentryPage = Route.options.component;
 
     // Mock fetch
