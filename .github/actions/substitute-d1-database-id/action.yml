@@ -17,112 +17,76 @@ runs:
       shell: bash
       env:
         D1_DATABASE_ID: ${{ inputs.d1-database-id }}
+        WRANGLER_TOML_PATH: ${{ inputs.wrangler-toml-path }}
       run: |
-        set -e  # Exit on any error
-        set -u  # Exit on undefined variables
-        
-        # Store absolute path to wrangler.toml for consistency
-        WRANGLER_TOML_PATH=$(cd "$(dirname "${{ inputs.wrangler-toml-path }}")" && pwd)/$(basename "${{ inputs.wrangler-toml-path }}")
-        
-        # Verify required commands are available
-        if ! command -v envsubst >/dev/null 2>&1; then
-          echo "::error::envsubst command not found. This is required for substitution."
-          exit 1
-        fi
-        
-        if ! command -v python3 >/dev/null 2>&1; then
-          echo "::error::python3 command not found. This is required for cleanup."
-          exit 1
-        fi
-        
-        # Verify file exists
-        if [ ! -f "$WRANGLER_TOML_PATH" ]; then
-          echo "::error::wrangler.toml file not found at: $WRANGLER_TOML_PATH"
-          exit 1
-        fi
-        
-        # Verify secret is set (without leaking value)
-        if [ -z "$D1_DATABASE_ID" ]; then
-          echo "::error::D1_DATABASE_ID secret is not set"
-          exit 1
-        fi
-        
-        # Trim any whitespace from the database ID value (prevents issues with secret formatting)
-        # Use parameter expansion instead of xargs to avoid quote issues
-        D1_DATABASE_ID="${D1_DATABASE_ID#"${D1_DATABASE_ID%%[![:space:]]*}"}"  # Remove leading whitespace
-        D1_DATABASE_ID="${D1_DATABASE_ID%"${D1_DATABASE_ID##*[![:space:]]}"}"  # Remove trailing whitespace
-        
-        # Verify the trimmed value is not empty
-        if [ -z "$D1_DATABASE_ID" ]; then
-          echo "::error::D1_DATABASE_ID is empty after trimming"
-          exit 1
-        fi
-        
-        # Verify placeholder exists in file
-        if ! grep -q '\${D1_DATABASE_ID}' "$WRANGLER_TOML_PATH"; then
-          echo "::error::Placeholder \${D1_DATABASE_ID} not found in wrangler.toml"
-          exit 1
-        fi
-        
-        # Export D1_DATABASE_ID for envsubst (it's already in env, but ensure it's available)
-        export D1_DATABASE_ID
-        
-        # Perform substitution with explicit variable list
-        envsubst '$D1_DATABASE_ID' < "$WRANGLER_TOML_PATH" > "$WRANGLER_TOML_PATH".tmp
-        
-        # Verify substitution succeeded (placeholder should be gone)
-        if grep -q '\${D1_DATABASE_ID}' "$WRANGLER_TOML_PATH".tmp; then
-          echo "::error::Substitution failed - placeholder still present"
-          exit 1
-        fi
-        
-        # Verify database_id is not empty after substitution
-        if grep -q 'database_id = ""' "$WRANGLER_TOML_PATH".tmp; then
-          echo "::error::database_id is empty after substitution"
-          exit 1
-        fi
-        
-        # Clean up the database_id line using Python - ensures proper TOML formatting
-        # This fixes any trailing whitespace or characters that might cause TOML parsing errors
-        echo "🔧 Cleaning database_id line with Python..."
-        
-        # Export WRANGLER_TOML_PATH for Python script
-        export WRANGLER_TOML_PATH
-        
-        # Create Python script in a temporary file to avoid YAML linting issues
-        PYTHON_SCRIPT_FILE=$(mktemp)
-        if [ -z "$PYTHON_SCRIPT_FILE" ]; then
-          echo "::error::Failed to create temporary file"
-          exit 1
-        fi
-        cat > "$PYTHON_SCRIPT_FILE.tmp" << 'EOF'
+        python3 -c "
         import re
         import sys
         import os
+        import shutil
+        import textwrap
         
-        # Get file path from environment
-        file_path = os.environ.get('WRANGLER_TOML_PATH')
-        if not file_path:
-            print('::error::WRANGLER_TOML_PATH environment variable not set')
+        # Read script from stdin and dedent it
+        script = sys.stdin.read()
+        exec(textwrap.dedent(script))
+        " << 'SCRIPT_END'
+        # Get inputs from environment
+        d1_database_id = os.environ.get('D1_DATABASE_ID')
+        wrangler_toml_path = os.environ.get('WRANGLER_TOML_PATH')
+        
+        # Verify secret is set (without leaking value)
+        if not d1_database_id:
+            print('::error::D1_DATABASE_ID secret is not set')
             sys.exit(1)
         
-        file_path = file_path + '.tmp'
+        # Trim whitespace from database ID
+        d1_database_id = d1_database_id.strip()
         
-        # Verify temp file exists
-        if not os.path.exists(file_path):
-            print(f'::error::Temporary file not found: {file_path}')
+        # Verify the trimmed value is not empty
+        if not d1_database_id:
+            print('::error::D1_DATABASE_ID is empty after trimming')
             sys.exit(1)
         
-        # Read the file as text
+        # Convert to absolute path
+        wrangler_toml_path = os.path.abspath(wrangler_toml_path)
+        
+        # Verify file exists
+        if not os.path.isfile(wrangler_toml_path):
+            print(f'::error::wrangler.toml file not found at: {wrangler_toml_path}')
+            sys.exit(1)
+        
+        # Read the file
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            with open(wrangler_toml_path, 'r', encoding='utf-8') as f:
                 content = f.read()
         except Exception as e:
-            print(f'::error::Failed to read file: {e}')
+            print(f'::error::Failed to read wrangler.toml: {e}')
             sys.exit(1)
         
-        # Split into lines (preserve newlines in processing)
-        lines = content.splitlines(keepends=False)
+        # Verify placeholder exists in file
+        placeholder = '${D1_DATABASE_ID}'
+        if placeholder not in content:
+            print(f'::error::Placeholder {placeholder} not found in wrangler.toml')
+            sys.exit(1)
+        
+        # Perform substitution (replace envsubst functionality)
+        substituted_content = content.replace(placeholder, d1_database_id)
+        
+        # Verify substitution succeeded (placeholder should be gone)
+        if placeholder in substituted_content:
+            print('::error::Substitution failed - placeholder still present')
+            sys.exit(1)
+        
+        # Verify database_id is not empty after substitution
+        if 'database_id = ""' in substituted_content:
+            print('::error::database_id is empty after substitution')
+            sys.exit(1)
+        
+        # Clean up the database_id line - ensures proper TOML formatting
+        # This fixes any trailing whitespace or characters that might cause TOML parsing errors
+        print('🔧 Cleaning database_id line with Python...')
+        
+        lines = substituted_content.splitlines(keepends=False)
         
         found = False
         for i, line in enumerate(lines):
@@ -151,78 +115,101 @@ runs:
             print('::error::database_id line not found in file')
             sys.exit(1)
         
-        # Join lines with newlines and write back
-        # Ensure each line ends with exactly one newline
+        # Join lines with newlines and ensure file ends with exactly one newline
         output = '\n'.join(lines)
-        # Ensure file ends with exactly one newline (TOML requirement)
         if output and not output.endswith('\n'):
             output += '\n'
         
-        # Write back the file
+        # Write to temporary file first
+        temp_file = wrangler_toml_path + '.tmp'
         try:
-            with open(file_path, 'w', encoding='utf-8', newline='\n') as f:
+            with open(temp_file, 'w', encoding='utf-8', newline='\n') as f:
                 f.write(output)
         except Exception as e:
-            print(f'::error::Failed to write file: {e}')
+            print(f'::error::Failed to write temporary file: {e}')
             sys.exit(1)
-        EOF
-        # Strip leading 8 spaces from each line to fix indentation
-        if ! sed 's/^        //' "$PYTHON_SCRIPT_FILE.tmp" > "$PYTHON_SCRIPT_FILE"; then
-          echo "::error::Failed to process Python script"
-          rm -f "$PYTHON_SCRIPT_FILE.tmp" "$PYTHON_SCRIPT_FILE"
-          exit 1
-        fi
-        rm -f "$PYTHON_SCRIPT_FILE.tmp"
         
-        # Run Python script
-        python3 "$PYTHON_SCRIPT_FILE"
-        PYTHON_EXIT_CODE=$?
-        
-        # Clean up temporary Python script
-        rm -f "$PYTHON_SCRIPT_FILE"
-        
-        if [ $PYTHON_EXIT_CODE -ne 0 ]; then
-          echo "::error::Python cleanup failed with exit code $PYTHON_EXIT_CODE"
-          exit 1
-        fi
-        
-        # Verify temp file still exists after Python processing
-        if [ ! -f "$WRANGLER_TOML_PATH".tmp ]; then
-          echo "::error::Temporary file disappeared after Python processing"
-          exit 1
-        fi
+        # Verify temp file exists
+        if not os.path.isfile(temp_file):
+            print('::error::Temporary file disappeared after writing')
+            sys.exit(1)
         
         # Verify the line is properly formatted (no trailing content after quote)
         # Match: optional whitespace, database_id, optional whitespace, =, optional whitespace, ", value, ", optional whitespace, end of line
-        if ! grep -qE '^[[:space:]]*database_id[[:space:]]*=[[:space:]]*"[^"]*"[[:space:]]*$' "$WRANGLER_TOML_PATH".tmp; then
-          echo "::error::database_id line format verification failed"
-          echo "Actual line content (with visible characters):"
-          grep -E '^\s*database_id\s*=' "$WRANGLER_TOML_PATH".tmp | cat -A || true
-          echo "Hex dump of the line:"
-          grep -E '^\s*database_id\s*=' "$WRANGLER_TOML_PATH".tmp | od -An -tx1 || true
-          exit 1
-        fi
+        database_id_pattern = re.compile(r'^\s*database_id\s*=\s*"[^"]*"\s*$')
+        database_id_line_found = False
+        
+        with open(temp_file, 'r', encoding='utf-8') as f:
+            for line_num, line in enumerate(f, 1):
+                if database_id_pattern.match(line.rstrip('\n\r')):
+                    database_id_line_found = True
+                    break
+        
+        if not database_id_line_found:
+            print('::error::database_id line format verification failed')
+            print('Actual line content (searching for database_id):')
+            with open(temp_file, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    if 'database_id' in line:
+                        # Show line with visible characters
+                        visible_line = repr(line.rstrip('\n\r'))
+                        print(f'  Line {line_num}: {visible_line}')
+                        # Show hex dump
+                        hex_dump = ' '.join(f'{ord(c):02x}' for c in line.rstrip('\n\r'))
+                        print(f'  Hex: {hex_dump}')
+            sys.exit(1)
         
         # Verify database_id value is not empty (double-check)
-        DB_VALUE_CHECK=$(grep -E '^\s*database_id\s*=' "$WRANGLER_TOML_PATH".tmp | sed -E 's/^[[:space:]]*database_id[[:space:]]*=[[:space:]]*"([^"]*)".*/\1/')
-        if [ -z "$DB_VALUE_CHECK" ]; then
-          echo "::error::database_id value is empty after cleanup"
-          exit 1
-        fi
+        db_value_pattern = re.compile(r'^\s*database_id\s*=\s*"([^"]*)"')
+        db_value_check = None
         
-        echo "✅ Line cleaned and verified successfully"
+        with open(temp_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                match = db_value_pattern.match(line.rstrip('\n\r'))
+                if match:
+                    db_value_check = match.group(1)
+                    break
+        
+        if not db_value_check:
+            print('::error::database_id value is empty after cleanup')
+            sys.exit(1)
+        
+        print('✅ Line cleaned and verified successfully')
         
         # Final verification: ensure the line exists and has content
-        if ! grep -qE '^\s*database_id\s*=\s*"[^"]+"' "$WRANGLER_TOML_PATH".tmp; then
-          echo "::error::Final verification failed - database_id line missing or malformed"
-          echo "File content around database_id:"
-          grep -A 3 -B 3 'database_id' "$WRANGLER_TOML_PATH".tmp || echo "No database_id line found"
-          exit 1
-        fi
+        final_pattern = re.compile(r'^\s*database_id\s*=\s*"[^"]+"')
+        final_check_passed = False
         
-        # Move substituted file into place (using absolute path for consistency)
-        # Note: TOML syntax will be validated by wrangler during deployment
-        mv "$WRANGLER_TOML_PATH".tmp "$WRANGLER_TOML_PATH"
-        echo "✅ File moved successfully"
+        with open(temp_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                if final_pattern.match(line.rstrip('\n\r')):
+                    final_check_passed = True
+                    break
         
-        echo "✅ Successfully substituted D1_DATABASE_ID (value not logged for security)"
+        if not final_check_passed:
+            print('::error::Final verification failed - database_id line missing or malformed')
+            print('File content around database_id:')
+            with open(temp_file, 'r', encoding='utf-8') as f:
+                lines_list = f.readlines()
+                for i, line in enumerate(lines_list):
+                    if 'database_id' in line:
+                        start = max(0, i - 3)
+                        end = min(len(lines_list), i + 4)
+                        for j in range(start, end):
+                            marker = '>>> ' if j == i else '    '
+                            print(f'{marker}{j+1}: {lines_list[j].rstrip()}')
+                        break
+                else:
+                    print('No database_id line found')
+            sys.exit(1)
+        
+        # Move substituted file into place (using shutil.move for cross-platform compatibility)
+        try:
+            shutil.move(temp_file, wrangler_toml_path)
+        except Exception as e:
+            print(f'::error::Failed to move file: {e}')
+            sys.exit(1)
+        
+        print('✅ File moved successfully')
+        print('✅ Successfully substituted D1_DATABASE_ID (value not logged for security)')
+        SCRIPT_END
