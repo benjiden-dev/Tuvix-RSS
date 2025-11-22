@@ -27,6 +27,15 @@ runs:
           exit 1
         fi
         
+        # Trim any whitespace from the database ID value (prevents issues with secret formatting)
+        D1_DATABASE_ID=$(echo "$D1_DATABASE_ID" | xargs)
+        
+        # Verify the trimmed value is not empty
+        if [ -z "$D1_DATABASE_ID" ]; then
+          echo "::error::D1_DATABASE_ID is empty after trimming"
+          exit 1
+        fi
+        
         # Verify placeholder exists in file
         if ! grep -q '\${D1_DATABASE_ID}' "$WRANGLER_TOML_PATH"; then
           echo "::error::Placeholder \${D1_DATABASE_ID} not found in wrangler.toml"
@@ -50,8 +59,64 @@ runs:
         
         # Clean up the database_id line to ensure it ends with just a newline (no trailing whitespace)
         # This fixes TOML parsing issues where trailing characters after the value cause errors
-        # Remove any trailing whitespace after the closing quote on the database_id line
-        sed -i 's/^\(database_id = ".*"\)[[:space:]]*$/\1/' "$WRANGLER_TOML_PATH".tmp
+        # Extract the database ID value and reconstruct the line perfectly
+        DB_VALUE=$(grep '^database_id = ' "$WRANGLER_TOML_PATH".tmp | sed 's/^database_id = "\(.*\)".*/\1/')
+        if [ -z "$DB_VALUE" ]; then
+          echo "::error::Could not extract database_id value"
+          exit 1
+        fi
+        
+        # Reconstruct the line perfectly: database_id = "value" with newline
+        # Use awk to replace the line with the perfectly formatted version
+        awk -v db_value="$DB_VALUE" '/^database_id = / { printf "database_id = \"%s\"\n", db_value; next } { print }' "$WRANGLER_TOML_PATH".tmp > "$WRANGLER_TOML_PATH".tmp2
+        mv "$WRANGLER_TOML_PATH".tmp2 "$WRANGLER_TOML_PATH".tmp
+        
+        # Verify the database_id line is correctly formatted (no trailing whitespace, proper format)
+        DB_LINE=$(grep '^database_id = ' "$WRANGLER_TOML_PATH".tmp)
+        if [ -z "$DB_LINE" ]; then
+          echo "::error::database_id line not found after substitution"
+          exit 1
+        fi
+        
+        # Check for trailing whitespace (should be none after cleanup)
+        if echo "$DB_LINE" | grep -q '[[:space:]]$'; then
+          echo "::error::Trailing whitespace still present on database_id line after cleanup"
+          echo "Line: $DB_LINE"
+          exit 1
+        fi
+        
+        # Verify the line matches expected format: database_id = "value"
+        if ! echo "$DB_LINE" | grep -qE '^database_id = "[^"]+"$'; then
+          echo "::error::database_id line format is invalid"
+          echo "Line: $DB_LINE"
+          echo "Expected format: database_id = \"value\""
+          exit 1
+        fi
+        
+        # Ensure the file ends with a newline (TOML requirement)
+        # Read the file, ensure last line ends with newline
+        if [ -s "$WRANGLER_TOML_PATH".tmp ]; then
+          # Check if file ends with newline, if not add one
+          LAST_BYTE=$(tail -c 1 "$WRANGLER_TOML_PATH".tmp | od -An -tx1 | tr -d ' ')
+          if [ "$LAST_BYTE" != "0a" ]; then
+            echo "" >> "$WRANGLER_TOML_PATH".tmp
+          fi
+        fi
+        
+        # Final verification: Check the database_id line one more time after all processing
+        DB_LINE_FINAL=$(grep '^database_id = ' "$WRANGLER_TOML_PATH".tmp)
+        if [ -z "$DB_LINE_FINAL" ]; then
+          echo "::error::database_id line missing in final file"
+          exit 1
+        fi
+        
+        # Verify it's a single line (no embedded newlines)
+        LINE_COUNT=$(echo "$DB_LINE_FINAL" | wc -l)
+        if [ "$LINE_COUNT" -ne 1 ]; then
+          echo "::error::database_id line contains unexpected newlines"
+          echo "Line: $DB_LINE_FINAL"
+          exit 1
+        fi
         
         # Move substituted file into place (using absolute path for consistency)
         # Note: TOML syntax will be validated by wrangler during deployment

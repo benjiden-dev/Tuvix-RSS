@@ -47,10 +47,19 @@ fi
 
 echo "✅ Substitution successful"
 
-# Clean up trailing whitespace (same as CI/CD)
-echo "🧹 Cleaning up trailing whitespace..."
-sed -i '' 's/^\(database_id = ".*"\)[[:space:]]*$/\1/' "$WRANGLER_TOML.test" 2>/dev/null || \
-sed -i 's/^\(database_id = ".*"\)[[:space:]]*$/\1/' "$WRANGLER_TOML.test"
+# Clean up using reconstruction approach (same as CI/CD)
+echo "🧹 Cleaning up and reconstructing line..."
+# Extract the database ID value and reconstruct the line perfectly
+DB_VALUE=$(grep '^database_id = ' "$WRANGLER_TOML.test" | sed 's/^database_id = "\(.*\)".*/\1/')
+if [ -z "$DB_VALUE" ]; then
+  echo "❌ Error: Could not extract database_id value"
+  rm -f "$WRANGLER_TOML.test"
+  exit 1
+fi
+
+# Reconstruct the line perfectly: database_id = "value" with newline
+awk -v db_value="$DB_VALUE" '/^database_id = / { printf "database_id = \"%s\"\n", db_value; next } { print }' "$WRANGLER_TOML.test" > "$WRANGLER_TOML.test2"
+mv "$WRANGLER_TOML.test2" "$WRANGLER_TOML.test"
 
 # Verify database_id line format
 DB_LINE=$(grep '^database_id = ' "$WRANGLER_TOML.test")
