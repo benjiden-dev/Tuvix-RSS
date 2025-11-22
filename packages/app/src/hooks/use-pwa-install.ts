@@ -16,12 +16,14 @@ export function usePWAInstall(): UsePWAInstallReturn {
   const [deferredPrompt, setDeferredPrompt] =
     useState<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);
-  const [isInstalled, setIsInstalled] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia("(display-mode: standalone)").matches;
+  });
 
   useEffect(() => {
-    // Check if already installed
-    if (window.matchMedia("(display-mode: standalone)").matches) {
-      setIsInstalled(true);
+    // Skip if already installed
+    if (isInstalled) {
       return;
     }
 
@@ -52,7 +54,7 @@ export function usePWAInstall(): UsePWAInstallReturn {
       );
       window.removeEventListener("appinstalled", handleAppInstalled);
     };
-  }, []);
+  }, [isInstalled]);
 
   const promptInstall = async () => {
     if (!deferredPrompt) {

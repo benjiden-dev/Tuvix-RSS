@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useDebounce } from "@/hooks/use-debounce";
 
 interface UseAutoSaveSettingsOptions<T> {
@@ -35,8 +35,11 @@ export function useAutoSaveSettings<T extends Record<string, unknown>>({
   const lastSavedSnapshotRef = useRef<string | null>(null);
 
   // Load settings into form when they're fetched
+  // Use a ref to track if we've initialized to avoid setState in effect
+  const hasInitializedRef = useRef(false);
   useEffect(() => {
-    if (settings) {
+    if (settings && !hasInitializedRef.current) {
+      hasInitializedRef.current = true;
       // Compare only user-editable fields (exclude server-managed fields)
       const userEditableSettings = excludeServerManagedFields(settings);
       const settingsSnapshot = JSON.stringify(userEditableSettings);
@@ -44,12 +47,19 @@ export function useAutoSaveSettings<T extends Record<string, unknown>>({
       // Only update formData if settings actually changed
       // This prevents updating formData when settings updates from our own save
       if (lastSavedSnapshotRef.current !== settingsSnapshot) {
-        setFormData(settings);
+        // Use startTransition to avoid cascading renders
+        React.startTransition(() => {
+          setFormData(settings);
+        });
         // Update the snapshot to match what we just loaded (user-editable fields only)
         lastSavedSnapshotRef.current = settingsSnapshot;
       }
+    }
+  }, [settings]);
 
-      // Mark initial load as complete after a short delay
+  // Mark initial load as complete after a short delay
+  useEffect(() => {
+    if (settings) {
       const timer = setTimeout(() => {
         setIsInitialLoad(false);
       }, 1000);

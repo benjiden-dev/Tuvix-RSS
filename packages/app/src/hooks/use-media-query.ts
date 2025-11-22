@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 /**
  * Hook to detect media query matches
@@ -21,13 +21,18 @@ export function useMediaQuery(query: string): boolean {
     // Modern browsers
     mediaQuery.addEventListener("change", handleChange);
 
-    // Sync state on mount
-    setMatches(mediaQuery.matches);
+    // Sync state on mount (already initialized in useState, but sync in case query changed)
+    // Use startTransition to avoid cascading renders
+    if (mediaQuery.matches !== matches) {
+      React.startTransition(() => {
+        setMatches(mediaQuery.matches);
+      });
+    }
 
     return () => {
       mediaQuery.removeEventListener("change", handleChange);
     };
-  }, [query]);
+  }, [query, matches]);
 
   return matches;
 }

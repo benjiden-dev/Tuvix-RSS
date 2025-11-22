@@ -5,7 +5,7 @@ import {
   type PanInfo,
   type MotionValue,
 } from "motion/react";
-import { useCallback, useRef } from "react";
+import { useCallback, useState } from "react";
 
 export interface SwipeableConfig {
   onSwipeLeft?: () => void | Promise<void>;
@@ -26,6 +26,7 @@ export interface SwipeableReturn {
   backgroundOpacity: MotionValue<number>;
   background: MotionValue<string>;
   // Drag handlers
+  onDragStart?: () => void;
   onDragEnd: (event: PointerEvent, info: PanInfo) => void;
   // Animation controls
   controls: ReturnType<typeof useAnimation>;
@@ -45,7 +46,7 @@ export function useSwipeable({
 }: SwipeableConfig): SwipeableReturn {
   const x = useMotionValue(0);
   const controls = useAnimation();
-  const isDraggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
 
   // Visual feedback transforms
   // Left action (negative x - swipe left)
@@ -100,9 +101,13 @@ export function useSwipeable({
     return "transparent";
   });
 
+  const onDragStart = useCallback(() => {
+    setIsDragging(true);
+  }, []);
+
   const onDragEnd = useCallback(
     async (_event: PointerEvent, info: PanInfo) => {
-      isDraggingRef.current = false;
+      setIsDragging(false);
 
       if (disabled) {
         await controls.start({
@@ -179,8 +184,9 @@ export function useSwipeable({
     rightActionScale,
     backgroundOpacity,
     background,
+    onDragStart,
     onDragEnd,
     controls,
-    isDragging: isDraggingRef.current,
+    isDragging,
   };
 }
