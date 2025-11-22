@@ -577,7 +577,8 @@ export const articlesRouter = router({
       // So chunk size must be D1_MAX_PARAMETERS - 1 to stay within limit
       const existingStates: (typeof schema.userArticleStates.$inferSelect)[] =
         [];
-      const batches = chunkArray(
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+      const batches: number[][] = chunkArray<number>(
         input.articleIds,
         D1_MAX_PARAMETERS - 1
       );
@@ -678,7 +679,11 @@ export const articlesRouter = router({
       // So chunk size must be D1_MAX_PARAMETERS - 1 to stay within limit
       const existingStates: (typeof schema.userArticleStates.$inferSelect)[] =
         [];
-      const batches = chunkArray(articleIds, D1_MAX_PARAMETERS - 1);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
+      const batches: number[][] = chunkArray<number>(
+        articleIds,
+        D1_MAX_PARAMETERS - 1
+      );
 
       for (const batch of batches) {
         const batchStates = await ctx.db
