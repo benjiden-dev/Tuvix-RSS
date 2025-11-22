@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -64,6 +64,7 @@ export function ImportPreviewDialog({
   const [currentPreviewUrl, setCurrentPreviewUrl] = useState<string | null>(
     null,
   );
+  const processedUrlsRef = useRef<Set<string>>(new Set());
 
   // Use feed preview hook for fetching suggested categories
   const feedPreview: ReturnType<typeof useFeedPreview> =
@@ -71,36 +72,45 @@ export function ImportPreviewDialog({
 
   // When feed preview data arrives, cache it and auto-select matching categories
   useEffect(() => {
-    if (feedPreview.data && currentPreviewUrl) {
+    if (
+      feedPreview.data &&
+      currentPreviewUrl &&
+      !processedUrlsRef.current.has(currentPreviewUrl)
+    ) {
+      processedUrlsRef.current.add(currentPreviewUrl);
       const suggestedCategories = feedPreview.data.suggested_categories || [];
-      setSuggestedCategoriesCache((prev) => ({
-        ...prev,
-        [currentPreviewUrl]: suggestedCategories,
-      }));
 
-      // Auto-select suggested categories that match existing categories
-      const matchingCategoryIds = suggestedCategories
-        .map((suggested) => {
-          const existing = existingCategories.find(
-            (category) =>
-              category.name &&
-              category.name.toLowerCase() === suggested.name.toLowerCase(),
-          );
-          return existing?.id;
-        })
-        .filter((id): id is number => id !== undefined);
-
-      if (matchingCategoryIds.length > 0) {
-        setCategorySelections((prev) => ({
+      // Batch state updates using startTransition to avoid cascading renders
+      React.startTransition(() => {
+        setSuggestedCategoriesCache((prev) => ({
           ...prev,
-          [currentPreviewUrl]: {
-            selectedCategoryIds: matchingCategoryIds,
-            newCategoryNames: [],
-          },
+          [currentPreviewUrl]: suggestedCategories,
         }));
-      }
 
-      setCurrentPreviewUrl(null);
+        // Auto-select suggested categories that match existing categories
+        const matchingCategoryIds = suggestedCategories
+          .map((suggested) => {
+            const existing = existingCategories.find(
+              (category) =>
+                category.name &&
+                category.name.toLowerCase() === suggested.name.toLowerCase(),
+            );
+            return existing?.id;
+          })
+          .filter((id): id is number => id !== undefined);
+
+        if (matchingCategoryIds.length > 0) {
+          setCategorySelections((prev) => ({
+            ...prev,
+            [currentPreviewUrl]: {
+              selectedCategoryIds: matchingCategoryIds,
+              newCategoryNames: [],
+            },
+          }));
+        }
+
+        setCurrentPreviewUrl(null);
+      });
     }
   }, [feedPreview.data, currentPreviewUrl, existingCategories]);
 

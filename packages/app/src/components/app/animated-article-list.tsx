@@ -19,12 +19,12 @@ export function AnimatedArticleList({
   className,
 }: AnimatedArticleListProps) {
   // Track if we've rendered articles before to detect initial appearance after skeleton
-  const hasRenderedRef = React.useRef(false);
-  const isInitialAppearance = !hasRenderedRef.current && articles.length > 0;
+  const [hasRendered, setHasRendered] = React.useState(false);
+  const isInitialAppearance = !hasRendered && articles.length > 0;
 
   React.useEffect(() => {
     if (articles.length > 0) {
-      hasRenderedRef.current = true;
+      setHasRendered(true);
     }
   }, [articles.length]);
 

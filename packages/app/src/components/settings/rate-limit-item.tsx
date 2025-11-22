@@ -22,18 +22,20 @@ export function RateLimitItem({
   const remaining = limit - used;
 
   // Calculate seconds until reset with real-time updates
-  const [secondsUntilReset, setSecondsUntilReset] = useState(
-    Math.max(0, Math.floor((resetAt.getTime() - Date.now()) / 1000)),
-  );
+  const [secondsUntilReset, setSecondsUntilReset] = useState(0);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    // Initialize immediately
+    const updateSeconds = () => {
       const seconds = Math.max(
         0,
         Math.floor((resetAt.getTime() - Date.now()) / 1000),
       );
       setSecondsUntilReset(seconds);
-    }, 1000);
+    };
+
+    updateSeconds();
+    const interval = setInterval(updateSeconds, 1000);
 
     return () => clearInterval(interval);
   }, [resetAt]);
