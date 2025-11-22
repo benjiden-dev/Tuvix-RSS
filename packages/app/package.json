@@ -13,6 +13,7 @@
     "type-check": "tsc --noEmit",
     "knip": "knip",
     "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:ui": "vitest --ui",
     "test:run": "vitest run",

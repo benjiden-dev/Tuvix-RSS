@@ -46,11 +46,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           pnpm-version: ${{ env.PNPM_VERSION }}
 
-      - name: Lint API
-        run: pnpm run lint:api
-
-      - name: Lint App
-        run: pnpm run lint:app
+      - name: Lint
+        run: pnpm run lint
 
   format:
     name: Format Check
@@ -65,11 +62,8 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           pnpm-version: ${{ env.PNPM_VERSION }}
 
-      - name: Check Format API
-        run: pnpm run format:api
-
-      - name: Check Format App
-        run: pnpm run format:app
+      - name: Check Format
+        run: pnpm run format:check
 
   type-check:
     name: Type Check

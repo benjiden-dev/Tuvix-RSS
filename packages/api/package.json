@@ -36,6 +36,7 @@
     "migrate:public-categories": "tsx src/scripts/migrate-public-categories-to-feeds.ts",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\"",
     "email:preview": "pnpm exec email dev --dir src/services/email-templates"
   },
   "dependencies": {

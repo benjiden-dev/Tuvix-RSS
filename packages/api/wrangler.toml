@@ -29,7 +29,8 @@ binding = "CF_VERSION_METADATA"
 [[d1_databases]]
 binding = "DB"
 database_name = "tuvix"
-database_id = "${D1_DATABASE_ID}" # Substituted by envsubst in CI/CD, or override in wrangler.toml.local for local dev
+# Substituted by envsubst in CI/CD, or override in wrangler.toml.local for local dev
+database_id = "${D1_DATABASE_ID}"
 
 # Custom Domain Routes (Optional)
 # Only needed if routing traffic from a Cloudflare zone to this Worker
@@ -47,24 +48,32 @@ database_id = "${D1_DATABASE_ID}" # Substituted by envsubst in CI/CD, or overrid
 # Plan-specific API rate limit bindings
 [[ratelimits]]
 name = "FREE_API_RATE_LIMIT"
-namespace_id = "1003" # User-defined identifier - choose any unique positive integer
-simple = { limit = 60, period = 60 }  # Free plan: 60 requests per minute
+# User-defined identifier - choose any unique positive integer
+namespace_id = "1003"
+# Free plan: 60 requests per minute
+simple = { limit = 60, period = 60 }
 
 [[ratelimits]]
 name = "PRO_API_RATE_LIMIT"
-namespace_id = "1004" # User-defined identifier - choose any unique positive integer
-simple = { limit = 180, period = 60 }  # Pro plan: 180 requests per minute
+# User-defined identifier - choose any unique positive integer
+namespace_id = "1004"
+# Pro plan: 180 requests per minute
+simple = { limit = 180, period = 60 }
 
 [[ratelimits]]
 name = "ENTERPRISE_API_RATE_LIMIT"
-namespace_id = "1005" # User-defined identifier - choose any unique positive integer
-simple = { limit = 600, period = 60 }  # Enterprise/admin plan: 600 requests per minute
+# User-defined identifier - choose any unique positive integer
+namespace_id = "1005"
+# Enterprise/admin plan: 600 requests per minute
+simple = { limit = 600, period = 60 }
 
 # Public Feed rate limiting (unchanged - still uses single binding)
 [[ratelimits]]
 name = "FEED_RATE_LIMIT"
-namespace_id = "1002" # User-defined identifier - choose any unique positive integer
-simple = { limit = 10000, period = 60 }  # High limit - actual limits enforced per user via getUserLimits()
+# User-defined identifier - choose any unique positive integer
+namespace_id = "1002"
+# High limit - actual limits enforced per user via getUserLimits()
+simple = { limit = 10000, period = 60 }
 
 # Environment variables
 [vars]
