@@ -138,7 +138,7 @@ export default defineConfig({
     // Disable watch mode by default (use --watch flag to enable)
     watch: false,
     coverage: {
-      provider: "v8",
+      provider: "v8" as const,
       reporter: ["text", "json", "html", "lcov"],
       exclude: [
         // Exclude shadcn/ui components
@@ -168,5 +168,18 @@ export default defineConfig({
         statements: 60,
       },
     },
+  },
+  // Define environment variables for tests
+  // This ensures VITE_* variables are available during test execution
+  // even when CI doesn't set them during build
+  // Note: These are test values and will be used when running tests via Vitest
+  define: {
+    "import.meta.env.VITE_SENTRY_DSN": JSON.stringify(
+      "https://test@test.ingest.sentry.io/123",
+    ),
+    "import.meta.env.VITE_API_URL": JSON.stringify(
+      "http://localhost:3001/trpc",
+    ),
+    "import.meta.env.VITE_SENTRY_ENVIRONMENT": JSON.stringify("test"),
   },
 });
