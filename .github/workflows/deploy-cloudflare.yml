@@ -177,7 +177,7 @@ jobs:
       - name: Build App
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          VITE_SENTRY_RELEASE: ${{ steps.release-version.outputs.version }}
+          VITE_APP_VERSION: ${{ steps.release-version.outputs.version }}
         run: pnpm run build:app
 
       - name: Deploy to Cloudflare Pages

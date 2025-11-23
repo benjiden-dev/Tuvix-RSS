@@ -1299,7 +1299,7 @@ Secrets are configured per environment. Configure these in **Settings → Enviro
 | `SENTRY_DSN` | No | Backend Sentry DSN (for automatic release tracking) |
 | `VITE_SENTRY_DSN` | No | Frontend Sentry DSN (for error tracking) - Get from Sentry project settings |
 | `VITE_SENTRY_ENVIRONMENT` | No | Frontend Sentry environment (e.g., `production`, `staging`) |
-| `VITE_SENTRY_RELEASE` | No | Frontend Sentry release (e.g., git commit SHA or version tag) |
+| `VITE_APP_VERSION` | No | App version (e.g., git commit SHA or version tag) - used for Sentry release tracking and UI display |
 
 #### Development Environment Secrets
 
@@ -1499,7 +1499,7 @@ Secrets are configured per environment. Configure these in **Settings → Enviro
    - Go to GitHub → Settings → Secrets and variables → Actions
    - Add `VITE_SENTRY_DSN` (from `tuvix-app` project)
    - Add `VITE_SENTRY_ENVIRONMENT` (e.g., `production`)
-   - **Note:** `VITE_SENTRY_RELEASE` is automatically set during deployment from the release tag
+   - **Note:** `VITE_APP_VERSION` is automatically set during deployment from the release tag
    - You can manually set it if needed (optional, e.g., git commit SHA)
 
 4. **Verify Setup:**
@@ -1521,7 +1521,7 @@ Secrets are configured per environment. Configure these in **Settings → Enviro
 **Release Tracking:**
 - ✅ **Automatic:** Release version is automatically extracted from GitHub release tag or manual input
 - ✅ **Backend:** `SENTRY_RELEASE` secret is automatically updated during deployment workflow
-- ✅ **Frontend:** `VITE_SENTRY_RELEASE` is automatically passed as environment variable during build
+- ✅ **Frontend:** `VITE_APP_VERSION` is automatically passed as environment variable during build
 - ✅ **Fallback:** If no release tag is provided, uses git commit SHA
 
 **What Gets Tracked:**

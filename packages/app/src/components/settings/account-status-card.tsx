@@ -41,6 +41,7 @@ function getAccountAge(createdAt: Date) {
 
 export function AccountStatusCard({ user }: AccountStatusCardProps) {
   const accountAge = getAccountAge(user.createdAt);
+  const appVersion = import.meta.env.VITE_APP_VERSION;
 
   return (
     <Card>
@@ -85,6 +86,12 @@ export function AccountStatusCard({ user }: AccountStatusCardProps) {
             {formatDate(user.createdAt)}
             <span className="text-muted-foreground ml-2">({accountAge})</span>
           </span>
+        </div>
+
+        {/* App Version */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">App Version</span>
+          <span className="font-medium">{appVersion || ""}</span>
         </div>
 
         {/* Role Badge */}

@@ -77,7 +77,7 @@ describe("Sentry Initialization", () => {
   it("should initialize Sentry when DSN is provided", () => {
     import.meta.env.VITE_SENTRY_DSN = "https://test@test.ingest.sentry.io/123";
     import.meta.env.VITE_SENTRY_ENVIRONMENT = "test";
-    import.meta.env.VITE_SENTRY_RELEASE = "v1.0.0";
+    import.meta.env.VITE_APP_VERSION = "v1.0.0";
 
     // Note: We can't actually import and run main.tsx in tests because it renders the app
     // Instead, we test the initialization logic that would be called

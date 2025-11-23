@@ -36,7 +36,7 @@ if (dsn) {
     import.meta.env.VITE_SENTRY_ENVIRONMENT ||
     import.meta.env.MODE ||
     "development";
-  const release = import.meta.env.VITE_SENTRY_RELEASE;
+  const release = import.meta.env.VITE_APP_VERSION;
 
   // Debug logging in development
   if (import.meta.env.DEV) {
