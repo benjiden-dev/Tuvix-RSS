@@ -55,8 +55,8 @@ export const hackernewsTheme: ThemeConfig = {
     sidebarAccentForeground: hnWhite,
     sidebarBorder: hnBorder,
     sidebarRing: hnOrange,
-    logoPrimary: hnText,
-    logoSecondary: hnBackground,
+    logoPrimary: "oklch(25% 0.01 85)", // Dark gray, not pure black, slightly tinted
+    logoSecondary: "oklch(0.85 0.0092 106.57)", // Light beige for contrast
   },
   fonts: {
     sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",

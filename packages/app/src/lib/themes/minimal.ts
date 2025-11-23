@@ -58,9 +58,9 @@ export const minimalTheme: ThemeConfig = {
     sidebarAccentForeground: "oklch(0.1 0 0)", // Near black
     sidebarBorder: "transparent", // No borders
     sidebarRing: "oklch(0.5 0 0)", // Medium gray
-    // Logo colors - black and white
-    logoPrimary: "oklch(0.1 0 0)", // Near black
-    logoSecondary: "oklch(0.5 0 0)", // Medium gray
+    // Logo colors - dark gray (not pure black) and light gray
+    logoPrimary: "oklch(25% 0 0)", // Dark gray, not pure black
+    logoSecondary: "oklch(0.75 0 0)", // Light gray for better contrast
   },
   fonts: {
     sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",

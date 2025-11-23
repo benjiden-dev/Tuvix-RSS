@@ -100,9 +100,9 @@ export const materialTheme: ThemeConfig = {
     sidebarAccentForeground: onSurface,
     sidebarBorder: "transparent", // No visible borders for flat Material look
     sidebarRing: primary,
-    // Logo colors - using Material primary and onBackground
-    logoPrimary: primary,
-    logoSecondary: onBackground,
+    // Logo colors - dark gray (not pure black) and light gray for contrast
+    logoPrimary: "oklch(30% 0.015 260)", // Dark gray, slightly tinted with Material hue
+    logoSecondary: "oklch(80% 0.015 260)", // Light gray for contrast
   },
   fonts: {
     sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",

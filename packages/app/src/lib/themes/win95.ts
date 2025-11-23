@@ -85,9 +85,9 @@ export const win95Theme: ThemeConfig = {
     sidebarAccentForeground: win95Black,
     sidebarBorder: win95DarkGray,
     sidebarRing: win95Blue,
-    // Logo colors - grey and black (no blue)
-    logoPrimary: win95DarkGray,
-    logoSecondary: win95Black,
+    // Logo colors - dark gray (not pure black) and medium gray
+    logoPrimary: "oklch(30% 0 0)", // Dark gray, not pure black
+    logoSecondary: "oklch(0.7 0 0)", // Medium-light gray for contrast
   },
   fonts: {
     sans: '"MS Sans Serif", "MS Sans Serif", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif',

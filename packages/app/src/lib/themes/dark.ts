@@ -42,8 +42,8 @@ export const darkTheme: ThemeConfig = {
     sidebarAccentForeground: "oklch(0.985 0 0)",
     sidebarBorder: "oklch(1 0 0 / 10%)",
     sidebarRing: "oklch(0.439 0 0)",
-    logoPrimary: "oklch(70.8% 0 0)",
-    logoSecondary: "oklch(24% 0 0)",
+    logoPrimary: "oklch(75% 0 0)", // Light gray (was reversed)
+    logoSecondary: "oklch(30% 0 0)", // Dark gray, not pure black
   },
   fonts: {
     sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",

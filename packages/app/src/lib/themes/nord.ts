@@ -87,9 +87,9 @@ export const nordTheme: ThemeConfig = {
     sidebarAccentForeground: nord6,
     sidebarBorder: nord3,
     sidebarRing: nord8,
-    // Logo colors - using nord8 and nord6
-    logoPrimary: nord3,
-    logoSecondary: nord6,
+    // Logo colors - darker than background but not pure black, lighter secondary
+    logoPrimary: "oklch(25% 0.02 264)", // Darker than nord0 background, not pure black
+    logoSecondary: nord4, // Lighter than nord6 for better contrast
   },
   fonts: {
     sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",

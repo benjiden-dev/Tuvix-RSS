@@ -42,8 +42,8 @@ export const lightTheme: ThemeConfig = {
     sidebarAccentForeground: "oklch(0.205 0 0)",
     sidebarBorder: "oklch(0.922 0 0)",
     sidebarRing: "oklch(0.708 0 0)",
-    logoPrimary: "oklch(70.8% 0 0)",
-    logoSecondary: "oklch(0.922 0 0)",
+    logoPrimary: "oklch(25% 0 0)", // Dark gray, not pure black
+    logoSecondary: "oklch(0.85 0 0)", // Light gray for contrast
   },
   fonts: {
     sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
