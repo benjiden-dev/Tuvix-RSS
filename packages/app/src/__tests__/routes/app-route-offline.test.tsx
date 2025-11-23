@@ -36,6 +36,73 @@ vi.mock("@/lib/auth-client", () => ({
   },
 }));
 
+// Mock tRPC client to avoid URL parsing issues in tests
+const mockCheckVerificationStatus = vi.fn().mockResolvedValue({
+  requiresVerification: false,
+  emailVerified: true,
+});
+
+vi.mock("@trpc/client", async () => {
+  return {
+    createTRPCClient: vi.fn(() => ({
+      auth: {
+        checkVerificationStatus: {
+          query: mockCheckVerificationStatus,
+        },
+      },
+    })),
+    httpBatchLink: vi.fn(() => () => {}),
+  };
+});
+
+// Mock fetch globally to handle any fetch calls (fallback in case tRPC mock doesn't work)
+const originalFetch = global.fetch;
+global.fetch = vi.fn().mockImplementation((url: string | URL | Request) => {
+  // If it's a relative URL, convert it to absolute for Node.js
+  const urlString =
+    typeof url === "string"
+      ? url
+      : url instanceof URL
+        ? url.toString()
+        : url.url;
+  if (urlString.startsWith("/")) {
+    return Promise.resolve({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        result: {
+          data: {
+            requiresVerification: false,
+            emailVerified: true,
+          },
+        },
+      }),
+    } as any);
+  }
+  // For absolute URLs, use original fetch or return mock
+  return Promise.resolve({
+    ok: true,
+    json: vi.fn().mockResolvedValue({
+      result: {
+        data: {
+          requiresVerification: false,
+          emailVerified: true,
+        },
+      },
+    }),
+  } as any);
+});
+
+// Mock import.meta.env to provide absolute URL
+const originalEnv = import.meta.env;
+Object.defineProperty(import.meta, "env", {
+  value: {
+    ...originalEnv,
+    VITE_API_URL: "http://localhost:3001/trpc",
+  },
+  writable: true,
+  configurable: true,
+});
+
 // Import the route module to test beforeLoad
 const routeModule = await import("../../routes/app/route");
 
@@ -43,6 +110,12 @@ describe("App Route - Offline Navigation", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+
+    // Reset mocks
+    mockCheckVerificationStatus.mockResolvedValue({
+      requiresVerification: false,
+      emailVerified: true,
+    });
   });
 
   describe("session validation", () => {

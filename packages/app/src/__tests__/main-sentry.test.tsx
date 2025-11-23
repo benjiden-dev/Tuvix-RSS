@@ -5,27 +5,52 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import * as Sentry from "@sentry/react";
+
+// Create mock functions using vi.hoisted() so they're available when vi.mock is hoisted
+const {
+  mockInit,
+  mockCaptureException,
+  mockCaptureMessage,
+  mockBrowserTracingIntegration,
+  mockTanstackRouterBrowserTracingIntegration,
+  mockReplayIntegration,
+  mockFeedbackIntegration,
+} = vi.hoisted(() => {
+  return {
+    mockInit: vi.fn(),
+    mockCaptureException: vi.fn(),
+    mockCaptureMessage: vi.fn(),
+    mockBrowserTracingIntegration: vi.fn().mockReturnValue({}),
+    mockTanstackRouterBrowserTracingIntegration: vi.fn().mockReturnValue({}),
+    mockReplayIntegration: vi.fn().mockReturnValue({}),
+    mockFeedbackIntegration: vi.fn().mockReturnValue({}),
+  };
+});
 
 // Mock Sentry before importing main
 vi.mock("@sentry/react", () => ({
   default: {
-    init: vi.fn(),
-    captureException: vi.fn(),
-    captureMessage: vi.fn(),
-    browserTracingIntegration: vi.fn().mockReturnValue({}),
-    tanstackRouterBrowserTracingIntegration: vi.fn().mockReturnValue({}),
-    replayIntegration: vi.fn().mockReturnValue({}),
-    feedbackIntegration: vi.fn().mockReturnValue({}),
+    init: mockInit,
+    captureException: mockCaptureException,
+    captureMessage: mockCaptureMessage,
+    browserTracingIntegration: mockBrowserTracingIntegration,
+    tanstackRouterBrowserTracingIntegration:
+      mockTanstackRouterBrowserTracingIntegration,
+    replayIntegration: mockReplayIntegration,
+    feedbackIntegration: mockFeedbackIntegration,
   },
-  init: vi.fn(),
-  captureException: vi.fn(),
-  captureMessage: vi.fn(),
-  browserTracingIntegration: vi.fn().mockReturnValue({}),
-  tanstackRouterBrowserTracingIntegration: vi.fn().mockReturnValue({}),
-  replayIntegration: vi.fn().mockReturnValue({}),
-  feedbackIntegration: vi.fn().mockReturnValue({}),
+  init: mockInit,
+  captureException: mockCaptureException,
+  captureMessage: mockCaptureMessage,
+  browserTracingIntegration: mockBrowserTracingIntegration,
+  tanstackRouterBrowserTracingIntegration:
+    mockTanstackRouterBrowserTracingIntegration,
+  replayIntegration: mockReplayIntegration,
+  feedbackIntegration: mockFeedbackIntegration,
 }));
+
+// Import Sentry after mock is set up
+import * as Sentry from "@sentry/react";
 
 describe("Sentry Initialization", () => {
   const originalEnv = import.meta.env;
@@ -157,11 +182,15 @@ describe("Sentry Initialization", () => {
 });
 
 describe("Sentry Error Handlers", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("should capture uncaught errors", () => {
     const error = new Error("Test error");
     Sentry.captureException(error);
 
-    expect(Sentry.captureException).toHaveBeenCalledWith(error);
+    expect(mockCaptureException).toHaveBeenCalledWith(error);
   });
 
   it("should capture unhandled promise rejections", () => {
@@ -174,7 +203,7 @@ describe("Sentry Error Handlers", () => {
       },
     });
 
-    expect(Sentry.captureException).toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalled();
   });
 
   it("should capture initialization message", () => {
@@ -183,7 +212,7 @@ describe("Sentry Error Handlers", () => {
       "info",
     );
 
-    expect(Sentry.captureMessage).toHaveBeenCalledWith(
+    expect(mockCaptureMessage).toHaveBeenCalledWith(
       "Sentry test message - initialization complete",
       "info",
     );

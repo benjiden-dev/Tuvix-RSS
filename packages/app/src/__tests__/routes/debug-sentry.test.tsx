@@ -7,7 +7,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import * as Sentry from "@sentry/react";
 import React from "react";
 
 // Mock environment variables
@@ -16,19 +15,27 @@ const mockEnv = {
   VITE_API_URL: "http://localhost:3001/trpc",
 };
 
-// Mock Sentry
-vi.mock("@sentry/react", () => ({
-  default: {
-    captureException: vi.fn().mockResolvedValue("test-event-id"),
-    startSpan: vi.fn().mockImplementation(async (options, callback) => {
+// Create mock functions using vi.hoisted() so they're available when vi.mock is hoisted
+const { mockCaptureException, mockStartSpan } = vi.hoisted(() => {
+  return {
+    mockCaptureException: vi.fn().mockResolvedValue("test-event-id"),
+    mockStartSpan: vi.fn().mockImplementation(async (options, callback) => {
       return await callback();
     }),
-  },
-  captureException: vi.fn().mockResolvedValue("test-event-id"),
-  startSpan: vi.fn().mockImplementation(async (options, callback) => {
-    return await callback();
-  }),
-}));
+  };
+});
+
+// Mock Sentry BEFORE any imports
+vi.mock("@sentry/react", () => {
+  return {
+    default: {
+      captureException: mockCaptureException,
+      startSpan: mockStartSpan,
+    },
+    captureException: mockCaptureException,
+    startSpan: mockStartSpan,
+  };
+});
 
 describe("DebugSentryPage", () => {
   const originalEnv = import.meta.env;
@@ -37,6 +44,12 @@ describe("DebugSentryPage", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Reset mock implementations
+    mockCaptureException.mockResolvedValue("test-event-id");
+    mockStartSpan.mockImplementation(async (options, callback) => {
+      return await callback();
+    });
+
     // Mock import.meta.env BEFORE importing the component
     Object.defineProperty(import.meta, "env", {
       value: { ...mockEnv },
@@ -128,7 +141,7 @@ describe("DebugSentryPage", () => {
     await user.click(button);
 
     await waitFor(() => {
-      expect(Sentry.captureException).toHaveBeenCalled();
+      expect(mockCaptureException).toHaveBeenCalled();
     });
 
     await waitFor(() => {
@@ -150,7 +163,7 @@ describe("DebugSentryPage", () => {
     await user.click(button);
 
     await waitFor(() => {
-      expect(Sentry.startSpan).toHaveBeenCalled();
+      expect(mockStartSpan).toHaveBeenCalled();
     });
 
     await waitFor(() => {
@@ -247,6 +260,12 @@ describe("DebugSentryPage - Error Messages", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    // Reset mock implementations
+    mockCaptureException.mockResolvedValue("test-event-id");
+    mockStartSpan.mockImplementation(async (options, callback) => {
+      return await callback();
+    });
+
     // Mock import.meta.env BEFORE importing
     Object.defineProperty(import.meta, "env", {
       value: { ...mockEnv },
@@ -276,7 +295,7 @@ describe("DebugSentryPage - Error Messages", () => {
   });
 
   it("should display event ID when error is captured", async () => {
-    Sentry.captureException = vi.fn().mockResolvedValue("test-event-id-123");
+    mockCaptureException.mockResolvedValueOnce("test-event-id-123");
     const user = userEvent.setup();
     render(<DebugSentryPage />);
 
@@ -296,7 +315,7 @@ describe("DebugSentryPage - Error Messages", () => {
   });
 
   it("should handle missing event ID gracefully", async () => {
-    Sentry.captureException = vi.fn().mockResolvedValue(null);
+    mockCaptureException.mockResolvedValueOnce(null);
     const user = userEvent.setup();
     render(<DebugSentryPage />);
 
