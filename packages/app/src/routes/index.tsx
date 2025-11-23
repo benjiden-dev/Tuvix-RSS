@@ -1,4 +1,9 @@
-import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  redirect,
+  useNavigate,
+  isRedirect,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { TuvixLogo } from "@/components/app/tuvix-logo";
@@ -23,7 +28,8 @@ export const Route = createFileRoute("/")({
       // No valid session, allow login page to render
     } catch (error: unknown) {
       // Re-throw redirect errors (from our own code above)
-      if (error && typeof error === "object" && "isRedirect" in error) {
+      // Use TanStack Router's isRedirect() function to properly identify redirect errors
+      if (isRedirect(error)) {
         throw error;
       }
       // For network errors or other issues, allow login page to render
