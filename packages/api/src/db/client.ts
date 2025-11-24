@@ -31,13 +31,18 @@ export function createDatabase(env: Env) {
     // Node.js/Docker with better-sqlite3
     const dbPath = env.DATABASE_PATH || "./data/tuvix.db";
 
+    // Resolve to absolute path to ensure consistency regardless of working directory
+    const absoluteDbPath = dbPath.startsWith("/")
+      ? dbPath
+      : path.resolve(process.cwd(), dbPath);
+
     // Ensure data directory exists
-    const dataDir = path.dirname(dbPath);
+    const dataDir = path.dirname(absoluteDbPath);
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
 
-    const sqlite = new Database(dbPath);
+    const sqlite = new Database(absoluteDbPath);
 
     // Enable WAL mode for better concurrency
     sqlite.pragma("journal_mode = WAL");
