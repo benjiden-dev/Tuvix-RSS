@@ -223,6 +223,7 @@ export const articles = sqliteTable(
     content: text("content"),
     author: text("author"),
     imageUrl: text("image_url"),
+    audioUrl: text("audio_url"),
     publishedAt: integer("published_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
@@ -232,6 +233,7 @@ export const articles = sqliteTable(
     index("idx_articles_source_id").on(table.sourceId),
     index("idx_articles_published_at").on(table.publishedAt),
     index("idx_articles_guid").on(table.guid),
+    index("idx_articles_audio_url").on(table.audioUrl),
     unique().on(table.sourceId, table.guid),
   ]
 );
