@@ -252,21 +252,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                           },
                         )}
 
-                        {/* View More */}
-                        {subscriptions.length > 10 && (
-                          <SidebarMenuSubItem>
-                            <SidebarMenuSubButton asChild>
-                              <Link
-                                to="/app/subscriptions"
-                                onClick={ensureSidebarOpen}
-                              >
-                                <span className="font-semibold">
-                                  View More →
-                                </span>
-                              </Link>
-                            </SidebarMenuSubButton>
-                          </SidebarMenuSubItem>
-                        )}
+                        {/* View More - Always show like categories does */}
+                        <SidebarMenuSubItem>
+                          <SidebarMenuSubButton asChild>
+                            <Link
+                              to="/app/subscriptions"
+                              onClick={ensureSidebarOpen}
+                            >
+                              <span className="font-semibold">View All →</span>
+                            </Link>
+                          </SidebarMenuSubButton>
+                        </SidebarMenuSubItem>
                       </SidebarMenuSub>
                     </AccordionContent>
                   </AccordionItem>
