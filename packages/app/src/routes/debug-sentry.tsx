@@ -84,16 +84,48 @@ function DebugSentryPage() {
       const response = await fetch(
         `${apiUrl.replace("/trpc", "")}/debug-sentry`,
       );
+
+      // Handle non-JSON responses (e.g., 404 HTML)
+      const contentType = response.headers.get("content-type");
+      if (!contentType?.includes("application/json")) {
+        if (response.status === 404) {
+          setLastError(
+            "Backend debug endpoint not found. This endpoint is only available in Cloudflare Workers runtime.",
+          );
+        } else {
+          const text = await response.text();
+          setLastError(
+            `Backend returned non-JSON response (${response.status}): ${text.substring(0, 100)}`,
+          );
+        }
+        return;
+      }
+
+      const data = await response.json();
+
       if (response.ok) {
-        const data = await response.text();
-        setLastSuccess(`Backend test completed: ${data}`);
+        setLastSuccess(
+          `Backend test completed: ${data.message || JSON.stringify(data)}`,
+        );
       } else {
-        setLastError(`Backend test failed: ${response.status}`);
+        // The endpoint returns 500 for test errors, which is expected
+        // In Node.js, it will indicate Sentry is disabled
+        const message = data.note
+          ? `${data.message || data.error} (${data.note})`
+          : `Backend test error captured! Event ID: ${data.eventId || "unknown"}, Message: ${data.message || data.error}`;
+        setLastSuccess(message);
       }
     } catch (error) {
-      setLastError(
-        `Backend test error: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      // Handle JSON parsing errors
+      if (error instanceof SyntaxError) {
+        setLastError(
+          "Backend returned invalid JSON. The endpoint may not be available in this runtime.",
+        );
+      } else {
+        setLastError(
+          `Backend test error: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
   };
 
