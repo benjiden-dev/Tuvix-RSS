@@ -294,38 +294,8 @@ describe("AppSidebar", () => {
       expect(screen.queryByText("Feed 15")).not.toBeInTheDocument();
     });
 
-    it("should show 'View More' link when more than 10 subscriptions", async () => {
-      const mockSubscriptions = Array.from({ length: 15 }, (_, i) => ({
-        id: i + 1,
-        customTitle: null,
-        source: {
-          title: `Feed ${i + 1}`,
-          url: `https://example.com/feed${i + 1}.xml`,
-          iconUrl: null,
-        },
-        categories: [],
-        filters: [],
-        filterEnabled: false,
-        filterMode: "include" as const,
-      }));
-
-      vi.mocked(useDataModule.useSubscriptions).mockReturnValue({
-        data: { items: mockSubscriptions },
-        isLoading: false,
-      } as ReturnType<typeof useDataModule.useSubscriptions>);
-
-      render(<AppSidebar />, { wrapper: SidebarWrapper });
-
-      await waitFor(
-        () => {
-          expect(screen.getByText("View More →")).toBeInTheDocument();
-        },
-        { timeout: 2000 },
-      );
-    });
-
-    it("should not show 'View More' link when 10 or fewer subscriptions", async () => {
-      const mockSubscriptions = Array.from({ length: 10 }, (_, i) => ({
+    it("should always show 'View All' link for subscriptions", async () => {
+      const mockSubscriptions = Array.from({ length: 5 }, (_, i) => ({
         id: i + 1,
         customTitle: null,
         source: {
@@ -353,7 +323,9 @@ describe("AppSidebar", () => {
         { timeout: 2000 },
       );
 
-      expect(screen.queryByText("View More →")).not.toBeInTheDocument();
+      const viewAllLinks = screen.getAllByText("View All →");
+      // Should have at least 2 "View All" links (Categories and Subscriptions)
+      expect(viewAllLinks.length).toBeGreaterThanOrEqual(2);
     });
 
     it("should use customTitle when available, otherwise source title", async () => {
