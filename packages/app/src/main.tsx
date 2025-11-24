@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { TRPCProvider } from "./components/provider/trpc-provider";
+import { AudioContextProvider } from "./contexts/audio-context";
 import * as Sentry from "@sentry/react";
 
 // Import styles
@@ -209,7 +210,9 @@ if (!rootElement.innerHTML) {
   root.render(
     <StrictMode>
       <TRPCProvider>
-        <RouterProvider router={router} />
+        <AudioContextProvider>
+          <RouterProvider router={router} />
+        </AudioContextProvider>
       </TRPCProvider>
     </StrictMode>,
   );
