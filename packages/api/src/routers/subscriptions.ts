@@ -391,6 +391,10 @@ export const subscriptionsRouter = router({
             title: feedTitle,
             description: feedDescription,
             siteUrl,
+            // Update icon if we have a better one (and iconType is auto)
+            ...((!input.iconType || input.iconType === "auto") && feedIconUrl
+              ? { iconUrl: input.iconUrl || feedIconUrl }
+              : {}),
             lastFetched: new Date(),
           })
           .where(eq(schema.sources.id, sourceId));
