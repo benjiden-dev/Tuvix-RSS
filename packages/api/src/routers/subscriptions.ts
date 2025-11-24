@@ -8,7 +8,6 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { eq, and } from "drizzle-orm";
 import { router, rateLimitedProcedure } from "@/trpc/init";
-import { normalizeFeedUrl } from "@/utils/url-normalize";
 import type { Opml } from "@/types/feed";
 import {
   urlValidator,
@@ -49,7 +48,79 @@ import {
   buildSubscriptionResponse,
 } from "@/db/transformers";
 import { fetchAndDiscoverCategories } from "@/services/category-discovery";
+import { stripHtml } from "@/utils/text-sanitizer";
 import { discoverFavicon } from "@/services/favicon-fetcher";
+
+/**
+ * Extract iTunes image URL from feed metadata
+ *
+ * Tries multiple methods to extract itunes:image href:
+ * 1. Check parsed feed object for itunes namespace properties
+ * 2. Parse raw XML if available
+ *
+ * @param feedData - Parsed feed object from feedsmith
+ * @param feedContent - Optional raw XML content (for parsing itunes:image if not in parsed object)
+ * @returns iTunes image URL or undefined
+ */
+function extractItunesImage(
+  feedData: unknown,
+  feedContent?: string
+): string | undefined {
+  const feed = feedData as Record<string, unknown>;
+
+  // Try various ways feedsmith might expose itunes:image
+  // Method 1: Direct namespace access
+  if ("itunes:image" in feed) {
+    const itunesImage = feed["itunes:image"];
+    if (typeof itunesImage === "string") {
+      return itunesImage;
+    }
+    if (
+      itunesImage &&
+      typeof itunesImage === "object" &&
+      "href" in itunesImage &&
+      typeof itunesImage.href === "string"
+    ) {
+      return itunesImage.href;
+    }
+  }
+
+  // Method 2: Nested itunes property
+  if ("itunes" in feed && feed.itunes) {
+    const itunes = feed.itunes as Record<string, unknown>;
+    if ("image" in itunes) {
+      const image = itunes.image;
+      if (typeof image === "string") {
+        return image;
+      }
+      if (
+        image &&
+        typeof image === "object" &&
+        "href" in image &&
+        typeof image.href === "string"
+      ) {
+        return image.href;
+      }
+    }
+  }
+
+  // Method 3: Parse raw XML if available
+  if (feedContent) {
+    try {
+      // Match <itunes:image href="..."/>
+      const itunesImageMatch = feedContent.match(
+        /<itunes:image[^>]*href=["']([^"']+)["'][^>]*>/i
+      );
+      if (itunesImageMatch && itunesImageMatch[1]) {
+        return itunesImageMatch[1];
+      }
+    } catch (error) {
+      console.error("[extractItunesImage] XML parsing failed:", error);
+    }
+  }
+
+  return undefined;
+}
 
 export const subscriptionsRouter = router({
   /**
@@ -223,6 +294,7 @@ export const subscriptionsRouter = router({
 
       let feedUrl = input.url;
       let feedData;
+      let feedContent: string | undefined;
 
       try {
         const response = await fetch(feedUrl, {
@@ -238,7 +310,7 @@ export const subscriptionsRouter = router({
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const feedContent = await response.text();
+        feedContent = await response.text();
         const result = parseFeed(feedContent);
         feedData = result.feed;
       } catch (error) {
@@ -255,9 +327,9 @@ export const subscriptionsRouter = router({
           : "Untitled Feed";
       const feedDescription =
         "description" in feedData && feedData.description
-          ? feedData.description
+          ? stripHtml(feedData.description)
           : "subtitle" in feedData && feedData.subtitle
-            ? feedData.subtitle
+            ? stripHtml(feedData.subtitle)
             : undefined;
       const siteUrl =
         "link" in feedData && feedData.link
@@ -267,6 +339,38 @@ export const subscriptionsRouter = router({
               feedData.links[0]?.href
             ? feedData.links[0].href
             : undefined;
+
+      // Step 3.5: Extract icon URL from feed (itunes:image, image.url, or icon)
+      let feedIconUrl: string | undefined;
+      try {
+        // Priority: itunes:image > image.url > icon
+        const itunesImage = extractItunesImage(feedData, feedContent);
+
+        feedIconUrl =
+          itunesImage ||
+          ("image" in feedData &&
+          typeof feedData.image === "object" &&
+          feedData.image !== null &&
+          "url" in feedData.image &&
+          typeof feedData.image.url === "string"
+            ? feedData.image.url
+            : "icon" in feedData && typeof feedData.icon === "string"
+              ? feedData.icon
+              : undefined);
+
+        // Discover favicon if iconType is auto (default) and no custom iconUrl provided
+        if (
+          !input.iconUrl &&
+          (!input.iconType || input.iconType === "auto") &&
+          feedIconUrl
+        ) {
+          const faviconResult = await discoverFavicon(feedUrl, feedIconUrl);
+          feedIconUrl = faviconResult.iconUrl || feedIconUrl;
+        }
+      } catch (error) {
+        console.error("[create] Failed to discover favicon:", error);
+        // Failed to discover favicon, continue without it
+      }
 
       // Step 4: Check if source exists, create if not
       const existingSources = await ctx.db
@@ -299,7 +403,7 @@ export const subscriptionsRouter = router({
             title: feedTitle,
             description: feedDescription,
             siteUrl,
-            iconUrl: input.iconUrl || null,
+            iconUrl: input.iconUrl || feedIconUrl || null,
             iconType: input.iconType || "auto",
             lastFetched: new Date(),
           })
@@ -598,215 +702,21 @@ export const subscriptionsRouter = router({
       )
     )
     .mutation(async ({ ctx: _ctx, input }) => {
-      const { parseFeed } = await import("feedsmith");
-      const discoveredFeeds: {
-        url: string;
-        title: string;
-        type: "rss" | "atom";
-        description?: string;
-      }[] = [];
-      const seenUrls = new Set<string>();
-      const seenFeedIds = new Set<string>();
+      const { discoverFeeds } = await import("@/services/feed-discovery");
 
-      // Helper to check if URL is a valid feed
-      const checkFeed = async (feedUrl: string): Promise<boolean> => {
-        try {
-          const response = await fetch(feedUrl, {
-            headers: {
-              "User-Agent": "TuvixRSS/1.0",
-              Accept:
-                "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
-            },
-            signal: AbortSignal.timeout(10000),
-          });
+      // Use the extensible discovery system
+      const discoveredFeeds = await discoverFeeds(input.url);
 
-          if (!response.ok) return false;
-
-          // Get final URL after redirects and normalize it for deduplication
-          const finalUrl = response.url;
-          const normalizedUrl = normalizeFeedUrl(finalUrl);
-
-          // Check if we've already seen this normalized final URL
-          if (seenUrls.has(normalizedUrl)) return false;
-
-          // Mark URL as seen immediately to prevent race conditions with parallel checks
-          seenUrls.add(normalizedUrl);
-
-          const feedContent = await response.text();
-          const result = parseFeed(feedContent);
-          const feed = result.feed;
-
-          // Extract feed identifier for content-based deduplication
-          // Only Atom feeds have a reliable unique 'id' field
-          // RSS feeds don't have a unique identifier, so we only deduplicate by URL
-          let feedId: string | null = null;
-          if (result.format === "atom" && "id" in feed && feed.id) {
-            feedId = String(feed.id);
-          }
-
-          // Check if we've already seen a feed with the same content identifier
-          // (Only applies to Atom feeds with id field)
-          if (feedId && seenFeedIds.has(feedId)) {
-            return false;
-          }
-
-          // Mark feed ID as seen
-          if (feedId) {
-            seenFeedIds.add(feedId);
-          }
-
-          // Determine feed type
-          const type: "rss" | "atom" =
-            result.format === "atom" ? "atom" : "rss";
-          const title =
-            "title" in feed && feed.title ? feed.title : "Untitled Feed";
-          const description =
-            "description" in feed && feed.description
-              ? feed.description
-              : "subtitle" in feed && feed.subtitle
-                ? feed.subtitle
-                : undefined;
-
-          // Store original discovered URL for display (not the final redirected URL)
-          discoveredFeeds.push({
-            url: feedUrl,
-            title,
-            type,
-            description,
-          });
-
-          return true;
-        } catch {
-          return false;
-        }
-      };
-
-      // Step 0: Try appending .rss, .atom, or .xml to the original URL path
-      // This handles cases like Mastodon where @username.rss is the feed
-      const siteUrl = new URL(input.url);
-      const originalPathname = siteUrl.pathname;
-
-      // Only try this if the pathname doesn't already end with a feed extension
-      if (
-        originalPathname &&
-        !originalPathname.endsWith(".rss") &&
-        !originalPathname.endsWith(".atom") &&
-        !originalPathname.endsWith(".xml")
-      ) {
-        const pathExtensions = [".rss", ".atom", ".xml"];
-        await Promise.all(
-          pathExtensions.map((ext) =>
-            checkFeed(
-              `${siteUrl.protocol}//${siteUrl.hostname}${siteUrl.port ? ":" + siteUrl.port : ""}${originalPathname}${ext}`
-            )
-          )
-        );
-      }
-
-      // Step 1: Try common feed paths
-      const baseUrl = `${siteUrl.protocol}//${siteUrl.hostname}${siteUrl.port ? ":" + siteUrl.port : ""}`;
-      // Get the pathname and ensure it ends with / for proper path joining
-      const inputPathname = siteUrl.pathname.endsWith("/")
-        ? siteUrl.pathname
-        : `${siteUrl.pathname}/`;
-
-      const commonPaths = [
-        "/feed",
-        "/rss",
-        "/atom",
-        "/atom.xml",
-        "/feed.xml",
-        "/rss.xml",
-        "/index.xml",
-        "/feeds/posts/default",
-        "/feeds/all.atom",
-        "/feed/atom/",
-        "/blog/feed",
-        "/blog/rss",
-        "/blog/rss.xml",
-        "/blog/feed.xml",
-        "/blog/atom.xml",
-      ];
-
-      // Try common paths relative to base domain
-      await Promise.all(
-        commonPaths.map((path) => checkFeed(`${baseUrl}${path}`))
-      );
-
-      // Also try common paths relative to the input URL's pathname
-      // (e.g., if input is /blog/, try /blog/rss.xml)
-      if (inputPathname !== "/") {
-        const pathRelativePaths = [
-          "feed",
-          "rss",
-          "atom",
-          "atom.xml",
-          "feed.xml",
-          "rss.xml",
-          "index.xml",
-        ];
-        await Promise.all(
-          pathRelativePaths.map((path) =>
-            checkFeed(`${baseUrl}${inputPathname}${path}`)
-          )
-        );
-      }
-
-      // Step 2: Fetch HTML and parse for feed links
-      try {
-        const response = await fetch(input.url, {
-          headers: {
-            "User-Agent": "TuvixRSS/1.0",
-            Accept: "text/html,application/xhtml+xml",
-          },
-          signal: AbortSignal.timeout(10000),
-        });
-
-        if (response.ok) {
-          const html = await response.text();
-
-          // Parse for RSS/Atom link tags using regex
-          const linkRegex =
-            /<link[^>]*type=["'](application\/rss\+xml|application\/atom\+xml)["'][^>]*>/gi;
-          const matches = html.matchAll(linkRegex);
-
-          const feedUrls: string[] = [];
-
-          for (const match of matches) {
-            const linkTag = match[0];
-
-            // Extract href
-            const hrefMatch = linkTag.match(/href=["']([^"']+)["']/i);
-            if (hrefMatch) {
-              let feedUrl = hrefMatch[1];
-
-              // Resolve relative URLs
-              if (feedUrl.startsWith("/")) {
-                feedUrl = `${baseUrl}${feedUrl}`;
-              } else if (!feedUrl.startsWith("http")) {
-                feedUrl = `${baseUrl}/${feedUrl}`;
-              }
-
-              feedUrls.push(feedUrl);
-            }
-          }
-
-          // Check discovered feeds in parallel
-          await Promise.all(feedUrls.map(checkFeed));
-        }
-      } catch {
-        // HTML fetch failed, but we may have found feeds via common paths
-      }
-
-      // Step 3: If no feeds found, return error
-      if (discoveredFeeds.length === 0) {
-        throw new TRPCError({
-          code: "NOT_FOUND",
-          message: "No RSS or Atom feeds found on this website",
-        });
-      }
-
-      return discoveredFeeds;
+      // Filter to only rss/atom types to match output schema (maintain backward compatibility)
+      // rdf and json feeds are converted to rss for compatibility
+      return discoveredFeeds
+        .filter((feed) => feed.type === "rss" || feed.type === "atom")
+        .map((feed) => ({
+          url: feed.url,
+          title: feed.title,
+          type: feed.type as "rss" | "atom",
+          description: feed.description,
+        }));
     }),
 
   /**
@@ -829,6 +739,7 @@ export const subscriptionsRouter = router({
       // Step 1: Fetch and parse the feed
       let feedData;
       let feedUrl = input.url;
+      let feedContent: string | undefined;
 
       try {
         const response = await fetch(feedUrl, {
@@ -844,7 +755,7 @@ export const subscriptionsRouter = router({
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const feedContent = await response.text();
+        feedContent = await response.text();
         const result = parseFeed(feedContent);
         feedData = result.feed;
       } catch (error) {
@@ -861,9 +772,9 @@ export const subscriptionsRouter = router({
           : "Untitled Feed";
       const description =
         "description" in feedData && feedData.description
-          ? feedData.description
+          ? stripHtml(feedData.description)
           : "subtitle" in feedData && feedData.subtitle
-            ? feedData.subtitle
+            ? stripHtml(feedData.subtitle)
             : undefined;
       const siteUrl =
         "link" in feedData && feedData.link
@@ -878,8 +789,12 @@ export const subscriptionsRouter = router({
       // Use favicon-fetcher service with fallback strategies
       let iconUrl: string | undefined;
       try {
+        // Priority: itunes:image > image.url > icon
+        const itunesImage = extractItunesImage(feedData, feedContent);
+
         const feedIconUrl =
-          "image" in feedData &&
+          itunesImage ||
+          ("image" in feedData &&
           typeof feedData.image === "object" &&
           feedData.image !== null &&
           "url" in feedData.image &&
@@ -887,11 +802,12 @@ export const subscriptionsRouter = router({
             ? feedData.image.url
             : "icon" in feedData && typeof feedData.icon === "string"
               ? feedData.icon
-              : undefined;
+              : undefined);
 
         const faviconResult = await discoverFavicon(input.url, feedIconUrl);
         iconUrl = faviconResult.iconUrl || undefined;
-      } catch {
+      } catch (error) {
+        console.error("[preview] Failed to discover favicon:", error);
         // Failed to discover favicon, continue without it
       }
 
@@ -1651,9 +1567,9 @@ export const subscriptionsRouter = router({
               : feedInfo.title;
           const feedDescription =
             "description" in feedData && feedData.description
-              ? feedData.description
+              ? stripHtml(feedData.description)
               : "subtitle" in feedData && feedData.subtitle
-                ? feedData.subtitle
+                ? stripHtml(feedData.subtitle)
                 : undefined;
           const siteUrl =
             "link" in feedData && feedData.link
@@ -1675,9 +1591,6 @@ export const subscriptionsRouter = router({
 
           if (existingSources.length > 0) {
             sourceId = existingSources[0].id;
-            console.log(
-              `[OPML Import] Found existing source: url=${feedInfo.url}, sourceId=${sourceId}, userId=${userId}`
-            );
             await ctx.db
               .update(schema.sources)
               .set({
@@ -1700,9 +1613,6 @@ export const subscriptionsRouter = router({
               })
               .returning();
             sourceId = newSource[0].id;
-            console.log(
-              `[OPML Import] Created new source: url=${feedInfo.url}, sourceId=${sourceId}, userId=${userId}`
-            );
           }
 
           // Check if already subscribed
@@ -1719,9 +1629,6 @@ export const subscriptionsRouter = router({
 
           if (existingSubscription.length > 0) {
             // Already subscribed, skip
-            console.log(
-              `[OPML Import] Already subscribed: userId=${userId}, sourceId=${sourceId}, url=${feedInfo.url}`
-            );
             successCount++;
             continue;
           }
@@ -1760,9 +1667,6 @@ export const subscriptionsRouter = router({
             .returning();
 
           const subscriptionId = newSubscription[0].id;
-          console.log(
-            `[OPML Import] Created subscription: subscriptionId=${subscriptionId}, userId=${userId}, sourceId=${sourceId}, url=${feedInfo.url}`
-          );
 
           // Create/link categories (using normalization helper to prevent duplicates)
           if (feedInfo.categories.length > 0) {
