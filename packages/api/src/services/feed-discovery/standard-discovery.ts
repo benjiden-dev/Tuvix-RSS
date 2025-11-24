@@ -7,7 +7,7 @@
  * - HTML link tag parsing
  */
 
-import * as Sentry from "@sentry/node";
+import * as Sentry from "@/utils/sentry";
 import type {
   DiscoveryContext,
   DiscoveryService,
@@ -46,6 +46,7 @@ export class StandardDiscoveryService implements DiscoveryService {
         },
       },
       async (span) => {
+        /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
         const discoveredFeeds: DiscoveredFeed[] = [];
 
         try {
@@ -59,7 +60,7 @@ export class StandardDiscoveryService implements DiscoveryService {
           span.setAttribute("base_url", baseUrl);
           span.setAttribute("pathname", originalPathname);
 
-          Sentry.addBreadcrumb({
+          await Sentry.addBreadcrumb({
             category: "feed.discovery",
             message: `Starting standard discovery for ${baseUrl}`,
             level: "info",
@@ -173,7 +174,7 @@ export class StandardDiscoveryService implements DiscoveryService {
 
               for (const match of matches) {
                 const linkTag = match[0];
-                
+
                 // Safety check: ensure linkTag is defined and is a string
                 if (!linkTag || typeof linkTag !== "string") {
                   continue;
@@ -198,7 +199,7 @@ export class StandardDiscoveryService implements DiscoveryService {
               span.setAttribute("html_link_tags_found", feedUrls.length);
 
               if (feedUrls.length > 0) {
-                Sentry.addBreadcrumb({
+                await Sentry.addBreadcrumb({
                   category: "feed.discovery",
                   message: `Found ${feedUrls.length} feed links in HTML`,
                   level: "info",
@@ -225,7 +226,7 @@ export class StandardDiscoveryService implements DiscoveryService {
           } catch (error) {
             // HTML fetch failed, but we may have found feeds via common paths
             span.setAttribute("html_fetch_error", true);
-            Sentry.addBreadcrumb({
+            await Sentry.addBreadcrumb({
               category: "feed.discovery",
               message: "HTML fetch failed, using common paths only",
               level: "warning",
@@ -241,7 +242,7 @@ export class StandardDiscoveryService implements DiscoveryService {
           return discoveredFeeds;
         } catch (error) {
           span.setStatus({ code: 2, message: "Discovery failed" });
-          Sentry.captureException(error, {
+          await Sentry.captureException(error, {
             level: "warning",
             tags: {
               operation: "standard_discovery",
@@ -252,6 +253,7 @@ export class StandardDiscoveryService implements DiscoveryService {
           });
           return [];
         }
+        /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
       }
     );
   }

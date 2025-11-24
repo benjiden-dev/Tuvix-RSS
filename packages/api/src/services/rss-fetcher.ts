@@ -5,7 +5,7 @@
  * Supports automatic format detection and handles multiple feed formats.
  */
 
-import * as Sentry from "@sentry/node";
+import * as Sentry from "@/utils/sentry";
 import { parseFeed } from "feedsmith";
 import type { Rss, Atom, Rdf, Json } from "@/types/feed";
 import type { Database } from "../db/client";
@@ -116,6 +116,7 @@ export async function fetchSingleFeed(
       },
     },
     async (span) => {
+      /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
       try {
         // 0. Check if domain is blocked (before fetching)
         const domain = extractDomain(feedUrl);
@@ -181,7 +182,7 @@ export async function fetchSingleFeed(
           }
         }
 
-        Sentry.addBreadcrumb({
+        await Sentry.addBreadcrumb({
           category: "feed.fetch",
           message: `Fetching feed from ${feedUrl}`,
           level: "info",
@@ -210,7 +211,7 @@ export async function fetchSingleFeed(
           const error = new Error(
             `HTTP ${response.status}: ${response.statusText}`
           );
-          Sentry.captureException(error, {
+          await Sentry.captureException(error, {
             level: "error",
             tags: {
               feed_domain: domain || "unknown",
@@ -252,7 +253,7 @@ export async function fetchSingleFeed(
           span.setAttribute("feed_format", feedFormat);
           console.log(`Parsed ${feedUrl} as ${feedFormat}`);
 
-          Sentry.addBreadcrumb({
+          await Sentry.addBreadcrumb({
             category: "feed.fetch",
             message: `Parsed feed as ${feedFormat}`,
             level: "info",
@@ -263,7 +264,7 @@ export async function fetchSingleFeed(
           const parseError = new Error(
             `Failed to parse feed: ${error instanceof Error ? error.message : "Unknown"}`
           );
-          Sentry.captureException(parseError, {
+          await Sentry.captureException(parseError, {
             level: "error",
             tags: {
               feed_domain: domain || "unknown",
@@ -304,6 +305,7 @@ export async function fetchSingleFeed(
         // Error already captured in specific places, re-throw
         throw error;
       }
+      /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
     }
   );
 }
@@ -381,6 +383,7 @@ async function storeArticles(
       },
     },
     async (span) => {
+      /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
       // Extract items/entries from feed
       const items = extractFeedItems(feed);
 
@@ -437,7 +440,7 @@ async function storeArticles(
           articlesAdded++;
         } catch (error) {
           console.error("Failed to store article:", error);
-          Sentry.captureException(error, {
+          await Sentry.captureException(error, {
             level: "warning",
             tags: {
               operation: "store_article",
@@ -452,7 +455,7 @@ async function storeArticles(
       }
 
       if (sampleGuids.length > 0) {
-        Sentry.addBreadcrumb({
+        await Sentry.addBreadcrumb({
           category: "feed.store",
           message: `Processed ${items.length} items from feed`,
           level: "info",
@@ -470,6 +473,7 @@ async function storeArticles(
       span.setStatus({ code: 1, message: "ok" });
 
       return { articlesAdded, articlesSkipped };
+      /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
     }
   );
 }

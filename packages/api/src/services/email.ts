@@ -20,6 +20,7 @@ import {
   VerificationEmail,
 } from "./email-templates";
 import type React from "react";
+import * as Sentry from "@/utils/sentry";
 
 // ============================================================================
 // TYPES
@@ -186,7 +187,7 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
               }
             );
           }
-          // Also capture as exception
+          // Also capture as exception (using wrapper)
           await Sentry.captureException(
             error instanceof Error ? error : new Error(errorMessage),
             {
@@ -213,44 +214,20 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
     }
   };
 
-  // Use Sentry span if available
+  // Use Sentry span if available (using wrapper for runtime-agnostic support)
   if (env.SENTRY_DSN) {
-    try {
-      // Try Cloudflare Sentry first (for Workers)
-      const Sentry = await import("@sentry/cloudflare");
-      return await Sentry.startSpan(
-        {
-          op: "email.send",
-          name: `Send ${type} Email`,
-          attributes: {
-            "email.type": type,
-            "email.to": to,
-            "email.subject": subject,
-          },
+    return await Sentry.startSpan(
+      {
+        op: "email.send",
+        name: `Send ${type} Email`,
+        attributes: {
+          "email.type": type,
+          "email.to": to,
+          "email.subject": subject,
         },
-        sendEmailWithSentry
-      );
-    } catch {
-      // Fallback to Node.js Sentry or no Sentry
-      try {
-        const Sentry = await import("@sentry/node");
-        return await Sentry.startSpan(
-          {
-            op: "email.send",
-            name: `Send ${type} Email`,
-            attributes: {
-              "email.type": type,
-              "email.to": to,
-              "email.subject": subject,
-            },
-          },
-          sendEmailWithSentry
-        );
-      } catch {
-        // Sentry not available, send email without span
-        return await sendEmailWithSentry();
-      }
-    }
+      },
+      sendEmailWithSentry
+    );
   }
 
   // No Sentry configured, send email without span

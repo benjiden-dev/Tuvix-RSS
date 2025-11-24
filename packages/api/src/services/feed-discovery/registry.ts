@@ -5,7 +5,7 @@
  * Services are executed in priority order (lower priority = higher priority).
  */
 
-import * as Sentry from "@sentry/node";
+import * as Sentry from "@/utils/sentry";
 import { TRPCError } from "@trpc/server";
 import { createFeedValidator } from "./feed-validator";
 import type {
@@ -55,6 +55,7 @@ export class DiscoveryRegistry {
         },
       },
       async (span) => {
+        /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
         // Create shared discovery context for deduplication
         const seenUrls = new Set<string>();
         const seenFeedIds = new Set<string>();
@@ -68,7 +69,7 @@ export class DiscoveryRegistry {
           validateFeed,
         };
 
-        Sentry.addBreadcrumb({
+        await Sentry.addBreadcrumb({
           category: "feed.discovery",
           message: `Starting feed discovery for ${url}`,
           level: "info",
@@ -80,7 +81,7 @@ export class DiscoveryRegistry {
           const serviceName = service.constructor.name;
 
           if (!service.canHandle(url)) {
-            Sentry.addBreadcrumb({
+            await Sentry.addBreadcrumb({
               category: "feed.discovery",
               message: `Service ${serviceName} cannot handle URL`,
               level: "debug",
@@ -89,7 +90,7 @@ export class DiscoveryRegistry {
             continue;
           }
 
-          Sentry.addBreadcrumb({
+          await Sentry.addBreadcrumb({
             category: "feed.discovery",
             message: `Trying service ${serviceName}`,
             level: "info",
@@ -105,7 +106,7 @@ export class DiscoveryRegistry {
               span.setAttribute("feeds_found", feeds.length);
               span.setStatus({ code: 1, message: "ok" });
 
-              Sentry.addBreadcrumb({
+              await Sentry.addBreadcrumb({
                 category: "feed.discovery",
                 message: `Service ${serviceName} found ${feeds.length} feed(s)`,
                 level: "info",
@@ -122,7 +123,7 @@ export class DiscoveryRegistry {
             // Log error but continue to next service
             span.setAttribute(`service_${serviceName}_failed`, true);
             console.error(`Discovery service ${serviceName} failed:`, error);
-            Sentry.captureException(error, {
+            await Sentry.captureException(error, {
               level: "warning",
               tags: {
                 service: serviceName,
@@ -140,7 +141,7 @@ export class DiscoveryRegistry {
         span.setStatus({ code: 2, message: "No feeds found" });
         span.setAttribute("feeds_found", 0);
 
-        Sentry.captureException(
+        await Sentry.captureException(
           new Error("No RSS or Atom feeds found on this website"),
           {
             level: "info",
@@ -158,6 +159,7 @@ export class DiscoveryRegistry {
           code: "NOT_FOUND",
           message: "No RSS or Atom feeds found on this website",
         });
+        /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
       }
     );
   }
