@@ -26,6 +26,9 @@ export function getSentryConfig(env: Env) {
     environment,
     release,
     tracesSampleRate: 0.1, // 10% sampling for performance
+    enableLogs: true, // Enable Sentry logs for better debugging
+    // Note: integrations will be added in the adapter
+    // since consoleLoggingIntegration needs to be imported from the specific SDK
   };
 }
 

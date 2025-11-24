@@ -52,6 +52,7 @@ if (dsn) {
     dsn,
     environment,
     release,
+    enableLogs: true, // Enable Sentry logs for better debugging
 
     // Performance monitoring
     integrations: [
@@ -96,7 +97,7 @@ if (dsn) {
       const customTargets = import.meta.env
         .VITE_SENTRY_TRACE_PROPAGATION_TARGETS;
       if (customTargets) {
-        customTargets.split(",").forEach((target) => {
+        customTargets.split(",").forEach((target: string) => {
           const trimmed = target.trim();
           if (trimmed) {
             // Support regex patterns (if starts with /^ and ends with $/)
@@ -115,14 +116,17 @@ if (dsn) {
         });
       }
 
-      // Fallback defaults if no environment variables set
+      // No fallback defaults - require explicit configuration for security
+      // Overly broad patterns could leak trace headers to unintended services
       if (targets.length === 0) {
-        targets.push(
-          /^https:\/\/api\.tuvix\.app/, // Production API
-          /^https:\/\/api\.tuvix\.dev/, // Development API
-          /^http:\/\/localhost:3001/, // Local development
-          /^https:\/\/.*\.workers\.dev/, // Cloudflare Workers (any subdomain)
-        );
+        // Warn that configuration is required
+        if (import.meta.env.DEV) {
+          console.warn(
+            "⚠️ No Sentry trace propagation targets configured. " +
+              "Set VITE_API_URL or VITE_SENTRY_TRACE_PROPAGATION_TARGETS for distributed tracing. " +
+              "Without this, distributed tracing between frontend and backend will not work.",
+          );
+        }
       }
 
       return targets;

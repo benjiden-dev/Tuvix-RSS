@@ -117,7 +117,34 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
       });
 
       if (error) {
-        console.error(`Failed to send ${type} email:`, error);
+        const errorMessage = `Failed to send ${type} email: ${error.message || "Unknown error"}`;
+        console.error(errorMessage, {
+          type,
+          to,
+          error: error,
+          errorCode: (error as { code?: string })?.code,
+          errorStatus: (error as { status?: number })?.status,
+        });
+
+        // Log to Sentry if available
+        if (env.SENTRY_DSN) {
+          try {
+            const Sentry = await import("@sentry/cloudflare").catch(
+              () => import("@sentry/node")
+            );
+            if (Sentry.logger) {
+              Sentry.logger.error(errorMessage, {
+                emailType: type,
+                recipient: to,
+                errorCode: (error as { code?: string })?.code,
+                errorStatus: (error as { status?: number })?.status,
+              });
+            }
+          } catch {
+            // Sentry not available, ignore
+          }
+        }
+
         return {
           success: false,
           error: error.message || "Failed to send email",
@@ -133,7 +160,52 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error";
-      console.error(`Error sending ${type} email:`, errorMessage);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+
+      console.error(`Error sending ${type} email:`, {
+        errorMessage,
+        errorStack,
+        type,
+        to,
+        error,
+      });
+
+      // Log to Sentry if available
+      if (env.SENTRY_DSN) {
+        try {
+          const Sentry = await import("@sentry/cloudflare").catch(
+            () => import("@sentry/node")
+          );
+          if (Sentry.logger) {
+            Sentry.logger.error(
+              `Error sending ${type} email: ${errorMessage}`,
+              {
+                emailType: type,
+                recipient: to,
+                errorStack,
+              }
+            );
+          }
+          // Also capture as exception
+          await Sentry.captureException(
+            error instanceof Error ? error : new Error(errorMessage),
+            {
+              tags: {
+                "email.type": type,
+                "email.status": "exception",
+              },
+              extra: {
+                recipient: to,
+                errorMessage,
+                errorStack,
+              },
+            }
+          );
+        } catch {
+          // Sentry not available, ignore
+        }
+      }
+
       return {
         success: false,
         error: errorMessage,
