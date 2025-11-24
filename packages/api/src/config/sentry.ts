@@ -46,9 +46,17 @@ export function initSentryNode(env: Env): void {
   // Dynamic import to avoid loading Cloudflare SDK in Node.js
   import("@sentry/node")
     .then((Sentry) => {
+      // Add Express integration for proper instrumentation
+      const expressIntegration =
+        Sentry.expressIntegration?.() || Sentry.expressIntegration;
+      const integrations = expressIntegration ? [expressIntegration] : [];
+
       // TypeScript doesn't fully resolve dynamic import types, so we need to assert
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-explicit-any
-      (Sentry as any).init(config);
+      (Sentry as any).init({
+        ...config,
+        integrations,
+      });
       console.log("✅ Sentry initialized for Node.js");
     })
     .catch((error) => {
