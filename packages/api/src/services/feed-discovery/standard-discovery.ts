@@ -173,10 +173,15 @@ export class StandardDiscoveryService implements DiscoveryService {
 
               for (const match of matches) {
                 const linkTag = match[0];
+                
+                // Safety check: ensure linkTag is defined and is a string
+                if (!linkTag || typeof linkTag !== "string") {
+                  continue;
+                }
 
                 // Extract href
                 const hrefMatch = linkTag.match(/href=["']([^"']+)["']/i);
-                if (hrefMatch) {
+                if (hrefMatch && hrefMatch[1]) {
                   let feedUrl = hrefMatch[1];
 
                   // Resolve relative URLs
