@@ -25,6 +25,7 @@ import { initializeAdmin } from "@/services/admin-init";
 import * as schema from "@/db/schema";
 import type { Env } from "@/types";
 import { initSentryNode } from "@/config/sentry";
+import { runMigrationsIfNeeded } from "@/db/migrate-local";
 
 const app = express();
 
@@ -84,7 +85,27 @@ if (env.NODE_ENV === "production" && allowedOrigins.length === 0) {
 }
 
 // Initialize Sentry early (before routes)
+// Note: Due to ESM and dynamic imports, Sentry initializes after Express is imported.
+// This causes a warning about Express not being instrumented, but it's informational only.
+// Error tracking via the error handler (below) will still work correctly.
+// For full automatic instrumentation, Sentry would need to be initialized in a separate
+// file using Node's --import flag, but that's not necessary for error tracking.
 initSentryNode(env);
+
+// Run migrations automatically on startup (Node.js only)
+// This ensures the database schema is up to date before the server starts
+// We'll await this before starting the server
+let migrationsPromise: Promise<void> | null = null;
+if (env.RUNTIME === "nodejs") {
+  migrationsPromise = runMigrationsIfNeeded(env).catch((error) => {
+    console.error("❌ Failed to run migrations:", error);
+    console.error(
+      "   The server will continue, but database operations may fail.\n" +
+        "   Run migrations manually with: pnpm db:migrate"
+    );
+    // Don't throw - let server start but warn user
+  });
+}
 
 app.use(
   cors({
@@ -326,27 +347,71 @@ app.use(
   })
 );
 
-// Initialize cron jobs
-// Initialize cron jobs (async, but don't await - let it run in background)
-initCronJobs(env).catch((error) => {
-  console.error("Failed to initialize cron jobs:", error);
-});
+// Initialize cron jobs and admin AFTER migrations complete
+// Wait for migrations to finish before initializing database-dependent services
+if (migrationsPromise) {
+  migrationsPromise
+    .then(() => {
+      // Initialize cron jobs (async, but don't await - let it run in background)
+      initCronJobs(env).catch((error) => {
+        console.error("Failed to initialize cron jobs:", error);
+      });
 
-// Initialize admin user from environment variables (if provided)
-// This runs on server startup and creates admin if credentials are provided
-const db = createDatabase(env);
-initializeAdmin(db, env)
-  .then((result) => {
-    if (result.created) {
-      console.log(`✅ ${result.message}`);
-    } else if (result.message.includes("already exists")) {
-      console.log(`ℹ️  ${result.message}`);
-    }
-    // Silently skip if credentials not provided (normal for non-admin deployments)
-  })
-  .catch((error) => {
-    console.error("❌ Failed to initialize admin:", error);
+      // Initialize admin user from environment variables (if provided)
+      // This runs on server startup and creates admin if credentials are provided
+      const db = createDatabase(env);
+      initializeAdmin(db, env)
+        .then((result) => {
+          if (result.created) {
+            console.log(`✅ ${result.message}`);
+          } else if (result.message.includes("already exists")) {
+            console.log(`ℹ️  ${result.message}`);
+          }
+          // Silently skip if credentials not provided (normal for non-admin deployments)
+        })
+        .catch((error) => {
+          console.error("❌ Failed to initialize admin:", error);
+        });
+    })
+    .catch(() => {
+      // Migrations failed, but still try to initialize (might work if tables exist)
+      console.warn("⚠️  Continuing despite migration errors...");
+      initCronJobs(env).catch((error) => {
+        console.error("Failed to initialize cron jobs:", error);
+      });
+
+      const db = createDatabase(env);
+      initializeAdmin(db, env)
+        .then((result) => {
+          if (result.created) {
+            console.log(`✅ ${result.message}`);
+          } else if (result.message.includes("already exists")) {
+            console.log(`ℹ️  ${result.message}`);
+          }
+        })
+        .catch((error) => {
+          console.error("❌ Failed to initialize admin:", error);
+        });
+    });
+} else {
+  // No migrations needed (Cloudflare Workers), initialize directly
+  initCronJobs(env).catch((error) => {
+    console.error("Failed to initialize cron jobs:", error);
   });
+
+  const db = createDatabase(env);
+  initializeAdmin(db, env)
+    .then((result) => {
+      if (result.created) {
+        console.log(`✅ ${result.message}`);
+      } else if (result.message.includes("already exists")) {
+        console.log(`ℹ️  ${result.message}`);
+      }
+    })
+    .catch((error) => {
+      console.error("❌ Failed to initialize admin:", error);
+    });
+}
 
 // Sentry error handler (must be after all routes, before other error handlers)
 if (env.SENTRY_DSN) {
@@ -372,10 +437,42 @@ app.use(
   }
 );
 
-// Start server
+// Start server after migrations complete (if running migrations)
+// This ensures the database is ready before accepting requests
 const port = parseInt(env.PORT || "3001", 10);
-app.listen(port, () => {
-  console.log(`🚀 tRPC Server (Express) listening on http://localhost:${port}`);
-  console.log(`📊 Health check: http://localhost:${port}/health`);
-  console.log(`🔌 tRPC endpoint: http://localhost:${port}/trpc`);
-});
+
+if (migrationsPromise) {
+  migrationsPromise
+    .then(() => {
+      app.listen(port, () => {
+        console.log(
+          `🚀 tRPC Server (Express) listening on http://localhost:${port}`
+        );
+        console.log(`📊 Health check: http://localhost:${port}/health`);
+        console.log(`🔌 tRPC endpoint: http://localhost:${port}/trpc`);
+      });
+    })
+    .catch(() => {
+      // Migrations failed, but start server anyway (user can fix manually)
+      console.warn("⚠️  Starting server despite migration errors...");
+      app.listen(port, () => {
+        console.log(
+          `🚀 tRPC Server (Express) listening on http://localhost:${port}`
+        );
+        console.log(`📊 Health check: http://localhost:${port}/health`);
+        console.log(`🔌 tRPC endpoint: http://localhost:${port}/trpc`);
+        console.log(
+          `⚠️  WARNING: Database may not be properly migrated. Run: pnpm db:migrate`
+        );
+      });
+    });
+} else {
+  // No migrations needed, start server immediately
+  app.listen(port, () => {
+    console.log(
+      `🚀 tRPC Server (Express) listening on http://localhost:${port}`
+    );
+    console.log(`📊 Health check: http://localhost:${port}/health`);
+    console.log(`🔌 tRPC endpoint: http://localhost:${port}/trpc`);
+  });
+}
