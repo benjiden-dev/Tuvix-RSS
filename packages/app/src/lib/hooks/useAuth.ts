@@ -6,31 +6,109 @@
 
 import { useRouter } from "@tanstack/react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import { trpc } from "@/lib/api/trpc";
+import type { AppRouter } from "@tuvix/api";
 
 // Better Auth uses cookies, so we don't need token management
 // Session is automatically handled by Better Auth via HTTP-only cookies
 // Session now includes all user fields: id, username, email, role, plan, banned
 
+// Types for Better Auth responses
+type AuthResult = {
+  user?: unknown;
+  error?: {
+    message?: string;
+  };
+};
+
+type VerificationStatus = {
+  requiresVerification: boolean;
+  emailVerified: boolean;
+};
+
+/**
+ * Check email verification status and navigate accordingly
+ * Shared logic extracted from useLogin and useRegister
+ * SECURITY: Fails closed - defaults to verification page if check fails
+ */
+const checkVerificationAndNavigate = async (
+  router: ReturnType<typeof useRouter>,
+): Promise<void> => {
+  let verificationStatus: VerificationStatus | null = null;
+
+  try {
+    const apiUrl = import.meta.env.VITE_API_URL || "/trpc";
+
+    const client = createTRPCClient<AppRouter>({
+      links: [
+        httpBatchLink({
+          url: apiUrl,
+          fetch: (url, options) => {
+            return fetch(url, {
+              ...options,
+              credentials: "include",
+            });
+          },
+        }),
+      ],
+    });
+
+    verificationStatus = await client.auth.checkVerificationStatus.query();
+  } catch (error) {
+    // Don't log TanStack Router redirects as errors (they're not errors)
+    const isRedirect =
+      error && typeof error === "object" && "isRedirect" in error;
+    if (!isRedirect) {
+      console.error("Failed to check email verification status:", error);
+    }
+    // SECURITY: Fail closed - if we can't check verification status,
+    // default to requiring verification to be safe
+    console.warn("Defaulting to verification page due to status check failure");
+  }
+
+  // Invalidate router to force beforeLoad to re-run with fresh session
+  // Await with { sync: true } to ensure invalidation completes before navigation
+  await router.invalidate({ sync: true });
+
+  // Navigate based on verification status
+  // If check failed (null), default to /verify-email for safety
+  if (
+    !verificationStatus ||
+    (verificationStatus.requiresVerification &&
+      !verificationStatus.emailVerified)
+  ) {
+    console.log("Email verification required, navigating to /verify-email");
+    try {
+      await router.navigate({
+        to: "/verify-email",
+        search: { token: undefined },
+      });
+    } catch (navError) {
+      console.error("Navigation to /verify-email failed:", navError);
+      window.location.href = "/verify-email";
+    }
+  } else {
+    console.log("Attempting navigation to /app/articles");
+    try {
+      await router.navigate({
+        to: "/app/articles",
+        search: { category_id: undefined, subscription_id: undefined },
+      });
+    } catch (navError) {
+      console.error("Navigation to /app/articles failed:", navError);
+      window.location.href = "/app/articles";
+    }
+  }
+};
+
 // Hook to get current user session
 // Better Auth session includes all necessary user data via customSession plugin
+// Note: Better Auth's useSession hook doesn't accept options - caching is configured at the QueryClient level
 export const useCurrentUser = () => {
-  return authClient.useSession({
-    // Increase stale time from default 5min to 15min
-    // Sessions rarely change, so longer cache is safe
-    staleTime: 15 * 60 * 1000, // 15 minutes
-
-    // Keep in cache for 30 minutes even if unused
-    gcTime: 30 * 60 * 1000,
-
-    // Don't refetch on component mount (already fetched in root)
-    refetchOnMount: false,
-
-    // Keep showing last session while refetching
-    placeholderData: (prev) => prev,
-  });
+  return authClient.useSession();
 };
 
 // Simple email detection - checks if input contains @ symbol
@@ -53,22 +131,19 @@ export const useLogin = () => {
       // This prevents 422 validation errors when users enter their email address
       if (isEmail(input.username)) {
         try {
-          const emailResult = await authClient.signIn.email({
+          const emailResult = (await authClient.signIn.email({
             email: input.username,
             password: input.password,
-          });
-          if (!emailResult || (emailResult as { error?: unknown }).error) {
+          })) as AuthResult;
+          if (!emailResult || emailResult.error) {
             throw new Error(
-              (emailResult as { error?: { message?: string } })?.error
-                ?.message || "Invalid email or password",
+              emailResult.error?.message || "Invalid credentials",
             );
           }
           return emailResult;
         } catch (error) {
           throw new Error(
-            error instanceof Error
-              ? error.message
-              : "Invalid email or password",
+            error instanceof Error ? error.message : "Invalid credentials",
           );
         }
       }
@@ -86,9 +161,9 @@ export const useLogin = () => {
           }
         ).username;
         if (signInWithUsername) {
-          const result = await signInWithUsername(input);
+          const result = (await signInWithUsername(input)) as AuthResult;
           // Check if the response indicates an error
-          if (result && !(result as { error?: unknown }).error) {
+          if (result && !result.error) {
             return result;
           }
         }
@@ -99,22 +174,17 @@ export const useLogin = () => {
       // Fallback to email login (input might be an email that doesn't contain @)
       // This handles edge cases where email format might be unusual
       try {
-        const emailResult = await authClient.signIn.email({
+        const emailResult = (await authClient.signIn.email({
           email: input.username, // Treat username field as email
           password: input.password,
-        });
-        if (!emailResult || (emailResult as { error?: unknown }).error) {
-          throw new Error(
-            (emailResult as { error?: { message?: string } })?.error?.message ||
-              "Invalid username/email or password",
-          );
+        })) as AuthResult;
+        if (!emailResult || emailResult.error) {
+          throw new Error(emailResult.error?.message || "Invalid credentials");
         }
         return emailResult;
       } catch (error) {
         throw new Error(
-          error instanceof Error
-            ? error.message
-            : "Invalid username/email or password",
+          error instanceof Error ? error.message : "Invalid credentials",
         );
       }
     },
@@ -125,37 +195,18 @@ export const useLogin = () => {
       // Invalidate all queries to ensure fresh data (including session query)
       await queryClient.invalidateQueries();
 
-      // Small delay to ensure cookie is set
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Verify session is available before navigating
+      // Better Auth sets session cookie synchronously, no polling needed
       const session = await authClient.getSession();
       console.log("Session after login:", session);
-      // Better Auth's getSession() returns {data: {user, session}, error: null}
+
       if (!session?.data?.user) {
         console.error("Session not available after login", session);
         toast.error("Session not available. Please try again.");
         return;
       }
 
-      // Invalidate router to force beforeLoad to re-run with fresh session
-      router.invalidate();
-
-      // Navigate using router.navigate() - TanStack Router will handle the navigation
-      // The beforeLoad will see the fresh session we just verified
-      console.log("Attempting navigation to /app/articles");
-      try {
-        const result = await router.navigate({
-          to: "/app/articles",
-          search: { category_id: undefined, subscription_id: undefined },
-        });
-        console.log("Navigation result:", result);
-      } catch (error) {
-        console.error("Navigation error:", error);
-        // Fallback to window.location if router navigation fails
-        console.log("Falling back to window.location.href");
-        window.location.href = "/app/articles";
-      }
+      // Check verification status and navigate accordingly
+      await checkVerificationAndNavigate(router);
     },
     onError: (error: Error) => {
       console.error("Login error:", error);
@@ -181,37 +232,18 @@ export const useRegister = () => {
       // Invalidate all queries to ensure fresh data (including session query)
       await queryClient.invalidateQueries();
 
-      // Small delay to ensure cookie is set
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Verify session is available before navigating
+      // Better Auth sets session cookie synchronously, no polling needed
       const session = await authClient.getSession();
       console.log("Session after registration:", session);
-      // Better Auth's getSession() returns {data: {user, session}, error: null}
+
       if (!session?.data?.user) {
         console.error("Session not available after registration", session);
         toast.error("Session not available. Please try again.");
         return;
       }
 
-      // Invalidate router to force beforeLoad to re-run with fresh session
-      router.invalidate();
-
-      // Navigate using router.navigate() - TanStack Router will handle the navigation
-      // The beforeLoad will see the fresh session we just verified
-      console.log("Attempting navigation to /app/articles");
-      try {
-        const result = await router.navigate({
-          to: "/app/articles",
-          search: { category_id: undefined, subscription_id: undefined },
-        });
-        console.log("Navigation result:", result);
-      } catch (error) {
-        console.error("Navigation error:", error);
-        // Fallback to window.location if router navigation fails
-        console.log("Falling back to window.location.href");
-        window.location.href = "/app/articles";
-      }
+      // Check verification status and navigate accordingly
+      await checkVerificationAndNavigate(router);
     },
     onError: (error: Error) => {
       // Handle specific error cases
