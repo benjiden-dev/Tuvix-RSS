@@ -16,8 +16,9 @@ interface SentryMetric {
   value: number;
 }
 
-interface SentrySpan {
-  setAttribute: (key: string, value: unknown) => void;
+// SpanJSON represents the serialized span object passed to beforeSendSpan
+interface SpanJSON {
+  data?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -86,12 +87,20 @@ export function getSentryConfig(env: Env): Record<string, unknown> | null {
      * beforeSendSpan callback
      *
      * Adds global context to all spans (traces)
+     * Note: beforeSendSpan receives a serialized SpanJSON object, not a Span instance
      */
-    beforeSendSpan: (span: SentrySpan): SentrySpan => {
-      // Add global context to all spans
-      span.setAttribute("runtime", runtime);
-      span.setAttribute("app.version", release);
-      span.setAttribute("app.environment", environment);
+    beforeSendSpan: (span: SpanJSON): SpanJSON => {
+      // Initialize data object if it doesn't exist
+      if (!span.data) {
+        span.data = {};
+      }
+
+      // Add global context directly to span data
+      span.data.runtime = runtime;
+      if (release) {
+        span.data["app.version"] = release;
+      }
+      span.data["app.environment"] = environment;
 
       return span;
     },
