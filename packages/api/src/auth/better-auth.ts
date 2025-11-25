@@ -199,7 +199,7 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
           };
         } catch (error) {
           // Log error to Sentry but don't block session creation
-          Sentry.captureException(error, {
+          await Sentry.captureException(error, {
             tags: {
               component: "better-auth",
               operation: "custom-session",

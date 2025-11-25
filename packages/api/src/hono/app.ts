@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { trpcServer } from "@hono/trpc-server";
+import { TRPCError } from "@trpc/server";
 import type { Env } from "../types";
 import type { BetterAuthUser, BetterAuthSession } from "../types/better-auth";
 import type * as SentryNode from "@sentry/node";
@@ -84,12 +85,12 @@ export function createHonoApp(config: HonoAppConfig) {
   }
 
   // Error handler
-  app.onError((err, c) => {
+  app.onError(async (err, c) => {
     console.error("❌ Error:", err);
     const sentry = c.get("sentry");
     const env = c.get("env");
     if (sentry && env.SENTRY_DSN) {
-      sentry.captureException(err);
+      await sentry.captureException(err);
     }
 
     const status =
@@ -210,10 +211,20 @@ export function createHonoApp(config: HonoAppConfig) {
     }
 
     // Get feed XML
-    const xml = await appRouter.createCaller(ctx).feeds.getPublicXml({
-      username,
-      slug,
-    });
+    let xml: string;
+    try {
+      xml = await appRouter.createCaller(ctx).feeds.getPublicXml({
+        username,
+        slug,
+      });
+    } catch (error) {
+      // Handle NOT_FOUND errors from getPublicXml (feed not found or private)
+      if (error instanceof TRPCError && error.code === "NOT_FOUND") {
+        return c.json({ error: error.message || "Feed not found" }, 404);
+      }
+      // Re-throw other errors to be handled by the generic error handler
+      throw error;
+    }
 
     // Log access (non-blocking)
     const [feed] = await ctx.db

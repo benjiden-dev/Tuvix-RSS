@@ -25,6 +25,8 @@ import { eq } from "drizzle-orm";
 import { DEFAULT_USER_PLAN, ADMIN_PLAN } from "@/config/plans";
 import { usernameValidator, emailValidator } from "@/types/validators";
 import { getBaseUrl } from "@/utils/base-url";
+import * as Sentry from "@/utils/sentry";
+import { emitCounter, emitMetrics } from "@/utils/metrics";
 import type {
   BetterAuthUser,
   SignUpEmailResult,
@@ -47,151 +49,311 @@ export const authRouter = router({
       })
     )
     .mutation(async ({ ctx, input }) => {
-      // Check if registration is allowed
-      const settings = await getGlobalSettings(ctx.db);
-      if (!settings.allowRegistration) {
-        throw new TRPCError({
-          code: "FORBIDDEN",
-          message: "Registration is currently disabled",
-        });
-      }
+      // Wrap entire signup in a parent span
+      return Sentry.startSpan(
+        {
+          name: "auth.signup",
+          op: "auth.register",
+          attributes: {
+            "auth.method": "email_password",
+            "auth.has_username": !!input.username,
+          },
+        },
+        async (parentSpan) => {
+          const startTime = Date.now();
+          let userId: number | undefined;
+          let isFirstUser = false;
 
-      const auth = createAuth(ctx.env, ctx.db);
+          try {
+            // Check if registration is allowed
+            const settings = await getGlobalSettings(ctx.db);
+            if (!settings.allowRegistration) {
+              parentSpan?.setAttribute("auth.registration_disabled", true);
+              emitCounter("auth.signup_blocked", 1, {
+                reason: "registration_disabled",
+              });
 
-      // Convert headers for Better Auth
-      const authHeaders =
-        ctx.req.headers instanceof Headers
-          ? ctx.req.headers
-          : fromNodeHeaders(
-              Object.fromEntries(
-                Object.entries(ctx.req.headers || {}).map(([k, v]) => [
-                  k,
-                  Array.isArray(v) ? v[0] : v,
-                ])
-              ) as Record<string, string>
+              throw new TRPCError({
+                code: "FORBIDDEN",
+                message: "Registration is currently disabled",
+              });
+            }
+
+            const auth = createAuth(ctx.env, ctx.db);
+
+            // Convert headers for Better Auth
+            const authHeaders =
+              ctx.req.headers instanceof Headers
+                ? ctx.req.headers
+                : fromNodeHeaders(
+                    Object.fromEntries(
+                      Object.entries(ctx.req.headers || {}).map(([k, v]) => [
+                        k,
+                        Array.isArray(v) ? v[0] : v,
+                      ])
+                    ) as Record<string, string>
+                  );
+
+            // STEP 1: Better Auth User Creation
+            const result = await Sentry.startSpan(
+              {
+                name: "auth.signup.create_user",
+                op: "auth.api_call",
+              },
+              async (span) => {
+                try {
+                  const result: SignUpEmailResult = await auth.api.signUpEmail({
+                    body: {
+                      email: input.email,
+                      password: input.password,
+                      name: input.username,
+                    },
+                    headers: authHeaders,
+                  });
+
+                  span?.setAttributes({
+                    "auth.user_created": !!result.user,
+                  });
+
+                  return result;
+                } catch (error) {
+                  span?.setAttribute("auth.error", (error as Error).message);
+                  await Sentry.captureException(error, {
+                    tags: {
+                      flow: "signup",
+                      step: "create_user",
+                    },
+                    contexts: {
+                      signup: {
+                        email: input.email,
+                        username: input.username,
+                      },
+                    },
+                  });
+                  throw error;
+                }
+              }
             );
 
-      try {
-        // Use Better Auth's signUp.email with username
-        const result: SignUpEmailResult = await auth.api.signUpEmail({
-          body: {
-            email: input.email,
-            password: input.password,
-            name: input.username, // Better Auth uses 'name' field
-          },
-          headers: authHeaders,
-        });
+            if (!result || !result.user) {
+              throw new TRPCError({
+                code: "INTERNAL_SERVER_ERROR",
+                message: "Failed to create user",
+              });
+            }
 
-        if (!result || !result.user) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Failed to create user",
-          });
-        }
+            userId = Number(result.user.id);
+            const resultUser = result.user as Partial<BetterAuthUser>;
 
-        const userId = Number(result.user.id);
-        const resultUser = result.user as Partial<BetterAuthUser>;
+            // Update Sentry user context with ID
+            await Sentry.setUser({
+              id: userId.toString(),
+            });
 
-        // Get the created user from Better Auth user table
-        const [dbUser] = await ctx.db
-          .select()
-          .from(schema.user)
-          .where(eq(schema.user.id, userId))
-          .limit(1);
+            // Get the created user from Better Auth user table
+            const [dbUser] = await ctx.db
+              .select()
+              .from(schema.user)
+              .where(eq(schema.user.id, userId))
+              .limit(1);
 
-        if (!dbUser) {
-          throw new TRPCError({
-            code: "INTERNAL_SERVER_ERROR",
-            message: "User created but not found in database",
-          });
-        }
+            if (!dbUser) {
+              throw new TRPCError({
+                code: "INTERNAL_SERVER_ERROR",
+                message: "User created but not found in database",
+              });
+            }
 
-        // Determine if this should be an admin user
-        let role: "user" | "admin" =
-          (dbUser.role as "user" | "admin") || "user";
-        let plan: string = dbUser.plan || DEFAULT_USER_PLAN;
+            // STEP 2: Role Assignment
+            const roleData = await Sentry.startSpan(
+              {
+                name: "auth.signup.assign_role",
+                op: "db.query",
+              },
+              async (span) => {
+                let role: "user" | "admin" =
+                  (dbUser.role as "user" | "admin") || "user";
+                let plan: string = dbUser.plan || DEFAULT_USER_PLAN;
 
-        const allowFirstUserAdmin = ctx.env.ALLOW_FIRST_USER_ADMIN !== "false";
-        if (allowFirstUserAdmin) {
-          const hasAdmin = await hasAdminUser(ctx.db);
-          if (!hasAdmin) {
-            role = "admin";
-            plan = ADMIN_PLAN;
-            console.log(
-              "⚠️  First user registered - automatically promoted to admin"
+                const allowFirstUserAdmin =
+                  ctx.env.ALLOW_FIRST_USER_ADMIN !== "false";
+                if (allowFirstUserAdmin) {
+                  const hasAdmin = await hasAdminUser(ctx.db);
+                  if (!hasAdmin) {
+                    role = "admin";
+                    plan = ADMIN_PLAN;
+                    isFirstUser = true;
+                    console.log(
+                      "⚠️  First user registered - automatically promoted to admin"
+                    );
+
+                    await ctx.db
+                      .update(schema.user)
+                      .set({ role, plan })
+                      .where(eq(schema.user.id, userId!));
+                  }
+                } else {
+                  if (!dbUser.plan) {
+                    await ctx.db
+                      .update(schema.user)
+                      .set({ plan: DEFAULT_USER_PLAN })
+                      .where(eq(schema.user.id, userId!));
+                    plan = DEFAULT_USER_PLAN;
+                  }
+                }
+
+                span?.setAttributes({
+                  "auth.is_first_user": isFirstUser,
+                  "auth.role_assigned": role,
+                  "auth.plan": plan,
+                });
+
+                return { role, plan };
+              }
             );
 
-            // Update user role and plan in Better Auth user table
-            await ctx.db
-              .update(schema.user)
-              .set({ role, plan })
-              .where(eq(schema.user.id, userId));
+            // STEP 3: Initialize User Data
+            await Sentry.startSpan(
+              {
+                name: "auth.signup.init_user_data",
+                op: "db.transaction",
+              },
+              async (span) => {
+                // Create default user settings
+                const [existingSettings] = await ctx.db
+                  .select()
+                  .from(schema.userSettings)
+                  .where(eq(schema.userSettings.userId, userId!))
+                  .limit(1);
+
+                if (!existingSettings) {
+                  await ctx.db.insert(schema.userSettings).values({
+                    userId: userId!,
+                  });
+                }
+
+                // Initialize usage stats
+                const [existingStats] = await ctx.db
+                  .select()
+                  .from(schema.usageStats)
+                  .where(eq(schema.usageStats.userId, userId!))
+                  .limit(1);
+
+                if (!existingStats) {
+                  await ctx.db.insert(schema.usageStats).values({
+                    userId: userId!,
+                    sourceCount: 0,
+                    publicFeedCount: 0,
+                    categoryCount: 0,
+                    articleCount: 0,
+                    lastUpdated: new Date(),
+                  });
+                }
+
+                span?.setAttribute("auth.user_data_initialized", true);
+              }
+            );
+
+            const totalDuration = Date.now() - startTime;
+
+            // Set attributes on parent span
+            parentSpan?.setAttributes({
+              "auth.signup_success": true,
+              "auth.user_id": userId.toString(),
+              "auth.is_first_user": isFirstUser,
+              "auth.role": roleData.role,
+              "auth.plan": roleData.plan,
+              "auth.verification_required": settings.requireEmailVerification,
+              "auth.total_duration_ms": totalDuration,
+            });
+
+            // Emit comprehensive metrics
+            emitMetrics([
+              {
+                type: "counter",
+                name: "auth.signup_completed",
+                value: 1,
+                attributes: {
+                  is_first_user: isFirstUser ? "true" : "false",
+                  verification_required: settings.requireEmailVerification
+                    ? "true"
+                    : "false",
+                  role: roleData.role,
+                },
+              },
+              {
+                type: "distribution",
+                name: "auth.signup_duration",
+                value: totalDuration,
+                unit: "millisecond",
+                attributes: {
+                  verification_required: settings.requireEmailVerification
+                    ? "true"
+                    : "false",
+                },
+              },
+            ]);
+
+            // Return user info
+            return {
+              user: {
+                id: userId,
+                username:
+                  (resultUser.username as string | undefined) ||
+                  result.user.name ||
+                  "",
+                email: result.user.email,
+                role: roleData.role,
+                plan: roleData.plan,
+                banned: dbUser.banned || false,
+              },
+            };
+          } catch (error) {
+            const totalDuration = Date.now() - startTime;
+
+            // Set error attributes
+            parentSpan?.setAttributes({
+              "auth.signup_success": false,
+              "auth.error": (error as Error).message,
+              "auth.error_code": (error as TRPCError).code || "unknown",
+              "auth.total_duration_ms": totalDuration,
+            });
+
+            // Emit failure metrics
+            emitCounter("auth.signup_failed", 1, {
+              error_code: (error as TRPCError).code || "unknown",
+              error_type: (error as Error).constructor.name,
+            });
+
+            // Capture error with rich context
+            await Sentry.captureException(error, {
+              tags: {
+                flow: "signup",
+                step: "overall",
+              },
+              contexts: {
+                signup: {
+                  email: input.email,
+                  username: input.username,
+                  user_id: userId?.toString(),
+                  duration_ms: totalDuration,
+                },
+              },
+              user: userId ? { id: userId.toString() } : undefined,
+            });
+
+            // Better Auth errors are already logged
+            const authError = error as { status?: number; message?: string };
+            throw new TRPCError({
+              code:
+                authError.status === 400
+                  ? "BAD_REQUEST"
+                  : "INTERNAL_SERVER_ERROR",
+              message: authError.message || "Registration failed",
+            });
           }
-        } else {
-          // Ensure plan is set even if not first admin
-          if (!dbUser.plan) {
-            await ctx.db
-              .update(schema.user)
-              .set({ plan: DEFAULT_USER_PLAN })
-              .where(eq(schema.user.id, userId));
-            plan = DEFAULT_USER_PLAN;
-          }
         }
-
-        // Create default user settings if not exists
-        const [existingSettings] = await ctx.db
-          .select()
-          .from(schema.userSettings)
-          .where(eq(schema.userSettings.userId, userId))
-          .limit(1);
-
-        if (!existingSettings) {
-          await ctx.db.insert(schema.userSettings).values({
-            userId: userId,
-          });
-        }
-
-        // Initialize usage stats if not exists
-        const [existingStats] = await ctx.db
-          .select()
-          .from(schema.usageStats)
-          .where(eq(schema.usageStats.userId, userId))
-          .limit(1);
-
-        if (!existingStats) {
-          await ctx.db.insert(schema.usageStats).values({
-            userId: userId,
-            sourceCount: 0,
-            publicFeedCount: 0,
-            categoryCount: 0,
-            articleCount: 0,
-            lastUpdated: new Date(),
-          });
-        }
-
-        // Return user info (session is handled by Better Auth via cookies)
-        return {
-          user: {
-            id: userId,
-            username:
-              (resultUser.username as string | undefined) ||
-              result.user.name ||
-              "",
-            email: result.user.email,
-            role: role,
-            plan: plan,
-            banned: dbUser.banned || false,
-          },
-        };
-      } catch (error) {
-        // Better Auth errors are already logged
-        const authError = error as { status?: number; message?: string };
-        throw new TRPCError({
-          code:
-            authError.status === 400 ? "BAD_REQUEST" : "INTERNAL_SERVER_ERROR",
-          message: authError.message || "Registration failed",
-        });
-      }
+      );
     }),
 
   /**
