@@ -5,7 +5,6 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import * as authClientModule from "@/lib/auth-client";
 
 // Mock dependencies
 vi.mock("@tanstack/react-router", async () => {
@@ -13,9 +12,11 @@ vi.mock("@tanstack/react-router", async () => {
 
   // Create a special redirect error class that can be identified
   class RedirectError extends Error {
-    constructor(public to: string) {
+    to: string;
+    constructor(to: string) {
       super(`redirect:${to}`);
       this.name = "RedirectError";
+      this.to = to;
     }
   }
 
@@ -56,7 +57,6 @@ vi.mock("@trpc/client", async () => {
 });
 
 // Mock fetch globally to handle any fetch calls (fallback in case tRPC mock doesn't work)
-const originalFetch = global.fetch;
 global.fetch = vi.fn().mockImplementation((url: string | URL | Request) => {
   // If it's a relative URL, convert it to absolute for Node.js
   const urlString =
