@@ -65,7 +65,7 @@ global.fetch = vi.fn().mockImplementation((url: string | URL | Request) => {
       : url instanceof URL
         ? url.toString()
         : url.url;
-  
+
   // Create mock response with proper Content-Type header
   const mockResponse = {
     ok: true,
@@ -82,7 +82,7 @@ global.fetch = vi.fn().mockImplementation((url: string | URL | Request) => {
       },
     }),
   } as any;
-  
+
   if (urlString.startsWith("/")) {
     return Promise.resolve(mockResponse);
   }

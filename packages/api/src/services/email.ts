@@ -129,20 +129,17 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
 
         // Log to Sentry if available (using runtime-agnostic wrapper)
         if (env.SENTRY_DSN) {
-          await Sentry.captureException(
-            new Error(errorMessage),
-            {
-              tags: {
-                "email.type": type,
-                "email.status": "error",
-              },
-              extra: {
-                recipient: to,
-                errorCode: (error as { code?: string })?.code,
-                errorStatus: (error as { status?: number })?.status,
-              },
-            }
-          );
+          await Sentry.captureException(new Error(errorMessage), {
+            tags: {
+              "email.type": type,
+              "email.status": "error",
+            },
+            extra: {
+              recipient: to,
+              errorCode: (error as { code?: string })?.code,
+              errorStatus: (error as { status?: number })?.status,
+            },
+          });
         }
 
         return {
