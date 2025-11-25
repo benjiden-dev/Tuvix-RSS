@@ -27,5 +27,6 @@ export function getSentryConfig(env: Env) {
     release,
     tracesSampleRate: 0.1, // 10% sampling for performance
     enableLogs: true, // Enable Sentry logs for better debugging
+    debug: true, // Set to true for verbose Sentry logging (useful for debugging)
   };
 }

@@ -31,10 +31,7 @@ declare module "@tanstack/react-router" {
 }
 
 // Initialize Sentry AFTER router is created (so we can include router integration)
-// Vite replaces import.meta.env.VITE_* variables at BUILD TIME
-// If VITE_SENTRY_DSN is not set during build, it will be undefined in the bundle
 const dsn = import.meta.env.VITE_SENTRY_DSN;
-// Check for both undefined and empty string (defensive check)
 if (dsn && typeof dsn === "string" && dsn.trim().length > 0) {
   const environment =
     import.meta.env.VITE_SENTRY_ENVIRONMENT ||
@@ -120,17 +117,14 @@ if (dsn && typeof dsn === "string" && dsn.trim().length > 0) {
         });
       }
 
-      // No fallback defaults - require explicit configuration for security
-      // Overly broad patterns could leak trace headers to unintended services
+      // Fallback defaults if no environment variables set
       if (targets.length === 0) {
-        // Warn that configuration is required
-        if (import.meta.env.DEV) {
-          console.warn(
-            "⚠️ No Sentry trace propagation targets configured. " +
-              "Set VITE_API_URL or VITE_SENTRY_TRACE_PROPAGATION_TARGETS for distributed tracing. " +
-              "Without this, distributed tracing between frontend and backend will not work.",
-          );
-        }
+        targets.push(
+          /^https:\/\/api\.tuvix\.app/, // Production API
+          /^https:\/\/api\.tuvix\.dev/, // Development API
+          /^http:\/\/localhost:3001/, // Local development
+          /^https:\/\/.*\.workers\.dev/, // Cloudflare Workers (any subdomain)
+        );
       }
 
       return targets;
@@ -172,17 +166,8 @@ if (dsn && typeof dsn === "string" && dsn.trim().length > 0) {
     );
   }
 } else {
-  // Log more details in production to help debug
-  const dsnValue = import.meta.env.VITE_SENTRY_DSN;
   console.warn(
     "⚠️ Sentry DSN not configured. Set VITE_SENTRY_DSN to enable error tracking.",
-    {
-      dsnType: typeof dsnValue,
-      dsnValue: dsnValue ? `${dsnValue.substring(0, 20)}...` : dsnValue,
-      isUndefined: dsnValue === undefined,
-      isEmpty: dsnValue === "",
-      buildTime: "VITE_* env vars must be set during build (CI/CD)",
-    },
   );
 }
 
@@ -190,7 +175,12 @@ if (dsn && typeof dsn === "string" && dsn.trim().length > 0) {
 registerPWA();
 
 // Configure React 19 error hooks for Sentry (if Sentry is initialized)
-if (dsn && typeof window !== "undefined") {
+if (
+  dsn &&
+  typeof dsn === "string" &&
+  dsn.trim().length > 0 &&
+  typeof window !== "undefined"
+) {
   // React 19 error handling hooks
   // onUncaughtError - for uncaught errors
   window.addEventListener("error", (event) => {
