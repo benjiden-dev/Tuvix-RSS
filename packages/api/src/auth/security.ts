@@ -1,12 +1,10 @@
 /**
  * Security Utilities
  *
- * Provides audit logging and password reset token management
+ * Provides audit logging and request metadata extraction
  */
 
-import { randomBytes } from "crypto";
-import { eq, and, lt } from "drizzle-orm";
-import { passwordResetTokens, securityAuditLog } from "@/db/schema";
+import { securityAuditLog } from "@/db/schema";
 import type { Database } from "@/db/client";
 
 /**
@@ -56,102 +54,6 @@ export async function logSecurityEvent(
     // Log but don't throw - audit logging shouldn't break the app
     console.error("Failed to log security event:", error);
   }
-}
-
-/**
- * Generate a secure random token
- */
-export function generateSecureToken(length: number = 32): string {
-  return randomBytes(length).toString("hex");
-}
-
-/**
- * Create a password reset token
- * Expires in 1 hour by default
- */
-export async function createPasswordResetToken(
-  db: Database,
-  userId: number,
-  expiresInMinutes: number = 60
-): Promise<string> {
-  const token = generateSecureToken();
-  const expiresAt = new Date(Date.now() + expiresInMinutes * 60 * 1000);
-
-  // Invalidate any existing unused tokens for this user
-  await db
-    .update(passwordResetTokens)
-    .set({ used: true })
-    .where(
-      and(
-        eq(passwordResetTokens.userId, userId),
-        eq(passwordResetTokens.used, false)
-      )
-    );
-
-  // Create new token
-  await db.insert(passwordResetTokens).values({
-    userId,
-    token,
-    expiresAt,
-    used: false,
-  });
-
-  return token;
-}
-
-/**
- * Validate and consume a password reset token
- * Returns userId if valid, null otherwise
- */
-export async function validatePasswordResetToken(
-  db: Database,
-  token: string
-): Promise<number | null> {
-  const [resetToken] = await db
-    .select()
-    .from(passwordResetTokens)
-    .where(eq(passwordResetTokens.token, token))
-    .limit(1);
-
-  if (!resetToken) {
-    return null;
-  }
-
-  // Check if token is expired
-  if (resetToken.expiresAt < new Date()) {
-    return null;
-  }
-
-  // Check if token is already used
-  if (resetToken.used) {
-    return null;
-  }
-
-  // Mark token as used
-  await db
-    .update(passwordResetTokens)
-    .set({ used: true })
-    .where(eq(passwordResetTokens.id, resetToken.id));
-
-  return resetToken.userId;
-}
-
-/**
- * Clean up expired password reset tokens
- * Should be run periodically (e.g., daily cron job)
- */
-export async function cleanupExpiredTokens(db: Database): Promise<number> {
-  const now = new Date();
-
-  // Delete tokens that expired more than 24 hours ago
-  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-
-  const result = await db
-    .delete(passwordResetTokens)
-    .where(lt(passwordResetTokens.expiresAt, oneDayAgo))
-    .returning();
-
-  return result.length;
 }
 
 /**

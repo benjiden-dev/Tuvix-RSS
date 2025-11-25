@@ -22,7 +22,7 @@ import {
   Filter,
 } from "lucide-react";
 import type { OPMLFeed } from "@/lib/hooks/useImportOPML";
-import type { ModelsCategory } from "@/lib/api/client";
+import type { ModelsCategory } from "@/lib/api/generated/types.gen";
 import { useFeedPreview } from "@/lib/hooks/useFeedPreview";
 
 type FeedCategorySelection = {
@@ -441,7 +441,8 @@ export function ImportPreviewDialog({
                                         ? [
                                             {
                                               name: feed.folder,
-                                              source: "opml_folder",
+                                              count: 0,
+                                              color: "#808080",
                                             },
                                           ]
                                         : [])

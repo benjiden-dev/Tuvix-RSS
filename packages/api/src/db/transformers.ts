@@ -188,63 +188,6 @@ export function buildSubscriptionResponse(
 }
 
 /**
- * Fetch complete subscription with all related data
- *
- * Convenience function to fetch a subscription with its source,
- * categories, and filters in one go.
- *
- * @param db Database instance
- * @param subscriptionId Subscription ID to fetch
- * @returns Subscription response or null if not found
- */
-export async function fetchCompleteSubscription(
-  db: Database,
-  subscriptionId: number
-): Promise<ReturnType<typeof buildSubscriptionResponse> | null> {
-  // Fetch subscription with source
-  const result = await db
-    .select()
-    .from(schema.subscriptions)
-    .innerJoin(
-      schema.sources,
-      eq(schema.subscriptions.sourceId, schema.sources.id)
-    )
-    .where(eq(schema.subscriptions.id, subscriptionId))
-    .limit(1);
-
-  if (!result.length) {
-    return null;
-  }
-
-  const subscription = result[0].subscriptions;
-  const source = result[0].sources;
-
-  // Fetch categories
-  const categoryLinks = await db
-    .select()
-    .from(schema.subscriptionCategories)
-    .innerJoin(
-      schema.categories,
-      eq(schema.subscriptionCategories.categoryId, schema.categories.id)
-    )
-    .where(eq(schema.subscriptionCategories.subscriptionId, subscriptionId));
-
-  const categories = categoryLinks.map((link) => link.categories);
-
-  // Fetch filters if enabled
-  let filters: ReturnType<typeof transformSubscriptionFilter>[] = [];
-  if (subscription.filterEnabled) {
-    const dbFilters = await db
-      .select()
-      .from(schema.subscriptionFilters)
-      .where(eq(schema.subscriptionFilters.subscriptionId, subscriptionId));
-    filters = dbFilters.map(transformSubscriptionFilter);
-  }
-
-  return buildSubscriptionResponse(subscription, source, categories, filters);
-}
-
-/**
  * Fetch categories for multiple feeds (bulk fetch to avoid N+1)
  *
  * @param db Database instance

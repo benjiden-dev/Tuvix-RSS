@@ -1,8 +1,26 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["src/main.tsx", "src/routes/**/*.tsx"],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": [
+    "src/**/*.test.{ts,tsx}",
+    "src/**/*.spec.{ts,tsx}",
+    "coverage/**",
+    "dist/**",
+    "src/lib/api/generated/**",
+    "src/components/animate-ui/**",
+    "src/components/ui/**",
+    "src/lib/themes/**",
+    "src/test/**"
+  ],
+  "ignoreDependencies": ["@tuvix/api", "tailwindcss", "tw-animate-css"],
   "ignoreExportsUsedInFile": {
     "interface": true,
     "type": true
   },
-  "tags": ["-lintignore"]
+  "tags": ["-lintignore"],
+  "vite": true,
+  "vitest": {
+    "entry": ["src/test/**/*.{ts,tsx}", "vitest.config.ts"]
+  }
 }

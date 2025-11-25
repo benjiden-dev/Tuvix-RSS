@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CategorySuggestion } from "@/lib/hooks/useFeedPreview";
-import type { ModelsCategory } from "@/lib/api/client";
+import type { ModelsCategory } from "@/lib/api/generated/types.gen";
 
 interface SubscriptionCategorySelectorProps {
   suggestedCategories: CategorySuggestion[];

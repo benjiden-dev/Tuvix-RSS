@@ -15,13 +15,3 @@ export const DEFAULT_USER_PLAN = "free";
  * Plan assigned to admin users
  */
 export const ADMIN_PLAN = "enterprise";
-
-/**
- * Well-known plan IDs (for reference/documentation)
- * These are seeded by migrations but can be changed in the database
- */
-export const KNOWN_PLANS = {
-  FREE: "free",
-  PRO: "pro",
-  ENTERPRISE: "enterprise",
-} as const;
