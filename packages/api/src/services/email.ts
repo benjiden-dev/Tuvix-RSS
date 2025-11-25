@@ -21,6 +21,7 @@ import {
 } from "./email-templates";
 import type React from "react";
 import * as Sentry from "@/utils/sentry";
+import { emitCounter, withTiming } from "@/utils/metrics";
 
 // ============================================================================
 // TYPES
@@ -100,115 +101,127 @@ async function sendEmail(options: SendEmailOptions): Promise<SendEmailResult> {
   // Check if email service is configured
   if (!isEmailConfigured(env)) {
     logEmailAttempt(type, to, details);
+    // Emit metric for unconfigured email
+    emitCounter("email.not_configured", 1, { type });
     return { success: true }; // Return success in dev mode
   }
 
-  // Wrap email sending in Sentry span for observability
+  // Wrap email sending in Sentry span for observability and timing
   const sendEmailWithSentry = async (): Promise<SendEmailResult> => {
-    try {
-      // Initialize Resend client
-      const resend = new Resend(env.RESEND_API_KEY);
+    return await withTiming(
+      "email.send_duration",
+      async () => {
+        try {
+          // Initialize Resend client
+          const resend = new Resend(env.RESEND_API_KEY);
 
-      // Send email via Resend (using React Email component directly)
-      const { data, error } = await resend.emails.send({
-        from: env.EMAIL_FROM!,
-        to,
-        subject,
-        react: template,
-      });
+          // Send email via Resend (using React Email component directly)
+          const { data, error } = await resend.emails.send({
+            from: env.EMAIL_FROM!,
+            to,
+            subject,
+            react: template,
+          });
 
-      if (error) {
-        const errorMessage = `Failed to send ${type} email: ${error.message || "Unknown error"}`;
-        console.error(errorMessage, {
-          type,
-          to,
-          error: error,
-          errorCode: (error as { code?: string })?.code,
-          errorStatus: (error as { status?: number })?.status,
-        });
-
-        // Log to Sentry if available (using runtime-agnostic wrapper)
-        if (env.SENTRY_DSN) {
-          await Sentry.captureException(new Error(errorMessage), {
-            tags: {
-              "email.type": type,
-              "email.status": "error",
-            },
-            extra: {
-              recipient: to,
+          if (error) {
+            const errorMessage = `Failed to send ${type} email: ${error.message || "Unknown error"}`;
+            console.error(errorMessage, {
+              type,
+              to,
+              error: error,
               errorCode: (error as { code?: string })?.code,
               errorStatus: (error as { status?: number })?.status,
-            },
-          });
-        }
+            });
 
-        return {
-          success: false,
-          error: error.message || "Failed to send email",
-        };
-      }
+            // Log to Sentry if available (using runtime-agnostic wrapper)
+            if (env.SENTRY_DSN) {
+              await Sentry.captureException(new Error(errorMessage), {
+                tags: {
+                  "email.type": type,
+                  "email.status": "error",
+                },
+                extra: {
+                  recipient: to,
+                  errorCode: (error as { code?: string })?.code,
+                  errorStatus: (error as { status?: number })?.status,
+                },
+              });
+            }
 
-      // Log success (in development)
-      if (process.env.NODE_ENV !== "production") {
-        console.log(`✅ ${type} email sent to ${to} (ID: ${data?.id})`);
-      }
+            // Emit error metric
+            emitCounter("email.sent", 1, {
+              type,
+              status: "error",
+              error_code: (error as { code?: string })?.code || "unknown",
+            });
 
-      return { success: true };
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      const errorStack = error instanceof Error ? error.stack : undefined;
-
-      console.error(`Error sending ${type} email:`, {
-        errorMessage,
-        errorStack,
-        type,
-        to,
-        error,
-      });
-
-      // Log to Sentry if available (using runtime-agnostic wrapper)
-      if (env.SENTRY_DSN) {
-        await Sentry.captureException(
-          error instanceof Error ? error : new Error(errorMessage),
-          {
-            tags: {
-              "email.type": type,
-              "email.status": "exception",
-            },
-            extra: {
-              recipient: to,
-              errorMessage,
-              errorStack,
-            },
+            return {
+              success: false,
+              error: error.message || "Failed to send email",
+            };
           }
-        );
-      }
 
-      return {
-        success: false,
-        error: errorMessage,
-      };
-    }
+          // Log success (in development)
+          if (process.env.NODE_ENV !== "production") {
+            console.log(`✅ ${type} email sent to ${to} (ID: ${data?.id})`);
+          }
+
+          // Emit success metric
+          emitCounter("email.sent", 1, {
+            type,
+            status: "success",
+          });
+
+          return { success: true };
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          const errorStack = error instanceof Error ? error.stack : undefined;
+
+          console.error(`Error sending ${type} email:`, {
+            errorMessage,
+            errorStack,
+            type,
+            to,
+            error,
+          });
+
+          // Log to Sentry if available (using runtime-agnostic wrapper)
+          if (env.SENTRY_DSN) {
+            await Sentry.captureException(
+              error instanceof Error ? error : new Error(errorMessage),
+              {
+                tags: {
+                  "email.type": type,
+                  "email.status": "exception",
+                },
+                extra: {
+                  recipient: to,
+                  errorMessage,
+                  errorStack,
+                },
+              }
+            );
+          }
+
+          // Emit exception metric
+          emitCounter("email.sent", 1, {
+            type,
+            status: "exception",
+            error_type: error instanceof Error ? error.name : "unknown",
+          });
+
+          return {
+            success: false,
+            error: errorMessage,
+          };
+        }
+      },
+      { type, operation: "email_send" }
+    );
   };
 
-  // Use Sentry span if available (using wrapper for runtime-agnostic support)
-  if (env.SENTRY_DSN) {
-    return await Sentry.startSpan(
-      {
-        op: "email.send",
-        name: `Send ${type} Email`,
-        attributes: {
-          "email.type": type,
-          "email.to": to,
-          "email.subject": subject,
-        },
-      },
-      sendEmailWithSentry
-    );
-  }
-
-  // No Sentry configured, send email without span
+  // Execute email sending with timing metrics
   return await sendEmailWithSentry();
 }
 
