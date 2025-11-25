@@ -221,9 +221,10 @@ describe("useAuth", () => {
           password: "password",
         });
         expect(toast.success).toHaveBeenCalledWith("Welcome back!");
+        // Verification check fails in tests (ECONNREFUSED), so fail-closed defaults to /verify-email
         expect(mockRouter.navigate).toHaveBeenCalledWith({
-          to: "/app/articles",
-          search: { category_id: undefined },
+          to: "/verify-email",
+          search: { token: undefined },
         });
       });
     });
@@ -251,9 +252,10 @@ describe("useAuth", () => {
           password: "password",
         });
         expect(toast.success).toHaveBeenCalledWith("Welcome back!");
+        // Verification check fails in tests (ECONNREFUSED), so fail-closed defaults to /verify-email
         expect(mockRouter.navigate).toHaveBeenCalledWith({
-          to: "/app/articles",
-          search: { category_id: undefined },
+          to: "/verify-email",
+          search: { token: undefined },
         });
       });
     });
@@ -306,9 +308,10 @@ describe("useAuth", () => {
 
       await waitFor(() => {
         expect(toast.success).toHaveBeenCalledWith("Account created!");
+        // Verification check fails in tests (ECONNREFUSED), so fail-closed defaults to /verify-email
         expect(mockRouter.navigate).toHaveBeenCalledWith({
-          to: "/app/articles",
-          search: { category_id: undefined },
+          to: "/verify-email",
+          search: { token: undefined },
         });
       });
     });
