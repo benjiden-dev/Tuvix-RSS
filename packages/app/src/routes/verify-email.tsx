@@ -165,7 +165,7 @@ function VerifyEmailPage() {
       </div>
       <div className="bg-muted relative hidden lg:flex flex-col items-center justify-center">
         <TuvixLogo className="w-96 h-72" />
-        <h1 className="text-6xl font-bold text-logo-secondary">TuvixRSS</h1>
+        <h1 className="text-6xl font-bold text-logo-primary">TuvixRSS</h1>
       </div>
     </div>
   );
