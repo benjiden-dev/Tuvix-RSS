@@ -14,7 +14,7 @@ import type { Context } from "./context";
 
 // Initialize tRPC with context
 const t = initTRPC.context<Context>().create({
-  errorFormatter({ shape, error }) {
+  errorFormatter({ shape, error, ctx }) {
     // Log all errors to console for debugging
     console.error("❌ tRPC Error:", {
       code: error.code,
@@ -22,6 +22,29 @@ const t = initTRPC.context<Context>().create({
       cause: error.cause,
       stack: error.stack,
     });
+
+    // Capture to Sentry (if available and configured)
+    // Filter out UNAUTHORIZED errors to reduce noise (these are expected)
+    if (
+      ctx?.env?.SENTRY_DSN &&
+      error.code !== "UNAUTHORIZED" &&
+      error.code !== "NOT_FOUND"
+    ) {
+      // Try to import and use Sentry
+      import("@sentry/cloudflare")
+        .then(async (Sentry) => {
+          await Sentry.captureException(error, {
+            tags: {
+              trpc_code: error.code,
+              trpc_path: shape.data.path || "unknown",
+            },
+            level: error.code === "INTERNAL_SERVER_ERROR" ? "error" : "warning",
+          });
+        })
+        .catch(() => {
+          // Sentry not available - ignore silently
+        });
+    }
 
     return shape;
   },

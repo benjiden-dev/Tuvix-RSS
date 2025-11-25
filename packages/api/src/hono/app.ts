@@ -157,6 +157,9 @@ export function createHonoApp(config: HonoAppConfig) {
       },
       onError: ({ error, type, path }) => {
         console.error("❌ tRPC Error:", { type, path, error });
+
+        // Note: Error capturing is handled in errorFormatter in trpc/init.ts
+        // This onError is just for additional logging
       },
     })(c, next);
   });
