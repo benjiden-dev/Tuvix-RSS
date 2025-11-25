@@ -210,6 +210,52 @@ function SubscriptionsPage() {
     }
   }, [search.subscribe, navigate]);
 
+  // Handle OPML files opened via File Handling API
+  useEffect(() => {
+    // Check if File Handling API is supported
+    if (!("launchQueue" in window)) {
+      return;
+    }
+
+    const handleFileLaunch = async (file: File) => {
+      try {
+        // Validate it's an OPML file
+        if (
+          !file.name.endsWith(".opml") &&
+          !file.type.includes("xml") &&
+          !file.type.includes("opml")
+        ) {
+          toast.error("Invalid file type. Please provide an OPML file.");
+          return;
+        }
+
+        setUploadedFile(file);
+
+        // Read and parse the OPML file
+        const opmlContent = await file.text();
+        await parseOPML.mutateAsync({ opmlContent });
+        setShowPreview(true);
+
+        toast.success(`Opened ${file.name}`);
+      } catch (error) {
+        console.error("Failed to open OPML file:", error);
+        toast.error("Failed to open OPML file");
+      }
+    };
+
+    // Set up the launch queue consumer
+    window.launchQueue?.setConsumer(async (launchParams: LaunchParams) => {
+      if (!launchParams.files || launchParams.files.length === 0) {
+        return;
+      }
+
+      // Handle the first file (OPML imports are typically single files)
+      const fileHandle = launchParams.files[0];
+      const file = await fileHandle.getFile();
+      await handleFileLaunch(file);
+    });
+  }, [parseOPML]);
+
   const handleAdd = useCallback(async () => {
     if (!newSubUrl) {
       toast.error("URL is required");

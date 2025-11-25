@@ -1,4 +1,5 @@
 {
+  "id": "/",
   "name": "TuvixRSS",
   "short_name": "TuvixRSS",
   "description": "A modern RSS feed reader with advanced filtering and organization",
@@ -115,6 +116,54 @@
       ]
     }
   ],
+  "screenshots": [
+    {
+      "src": "/screenshots/desktop-articles.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Reading articles in TuvixRSS"
+    },
+    {
+      "src": "/screenshots/desktop-subscriptions.png",
+      "sizes": "1920x1080",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "Managing RSS feed subscriptions"
+    },
+    {
+      "src": "/screenshots/mobile-articles.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Browse your RSS feeds on mobile"
+    },
+    {
+      "src": "/screenshots/mobile-subscriptions.png",
+      "sizes": "750x1334",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Manage subscriptions on mobile"
+    }
+  ],
+  "file_handlers": [
+    {
+      "action": "/app/subscriptions",
+      "accept": {
+        "application/xml": [".opml"],
+        "text/xml": [".opml"],
+        "application/x-opml": [".opml"]
+      },
+      "icons": [
+        {
+          "src": "/icons/icon-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ],
+      "launch_type": "single-client"
+    }
+  ],
   "launch_handler": {
     "client_mode": "navigate-existing"
   },
@@ -122,14 +171,22 @@
   "edge_side_panel": {
     "preferred_width": 400
   },
+  "share_target": {
+    "action": "/app/subscriptions",
+    "method": "GET",
+    "encType": "application/x-www-form-urlencoded",
+    "params": {
+      "url": "subscribe"
+    }
+  },
   "protocol_handlers": [
     {
       "protocol": "web+rss",
-      "url": "/app/subscriptions?url=%s"
+      "url": "/app/subscriptions?subscribe=%s"
     },
     {
       "protocol": "web+feed",
-      "url": "/app/subscriptions?url=%s"
+      "url": "/app/subscriptions?subscribe=%s"
     }
   ]
 }
