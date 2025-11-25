@@ -58,9 +58,14 @@ import {
 
 export const Route = createFileRoute("/app/subscriptions")({
   component: SubscriptionsPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    subscribe: (search.subscribe as string) || undefined,
+  }),
 });
 
 function SubscriptionsPage() {
+  const search = Route.useSearch();
+  const navigate = Route.useNavigate();
   const { data: subscriptionsData, isLoading, isError } = useSubscriptions();
   const subscriptions = subscriptionsData?.items || [];
   const createSubscription = useCreateSubscription();
@@ -167,6 +172,43 @@ function SubscriptionsPage() {
       }
     };
   }, []);
+
+  // Handle subscribe URL parameter
+  useEffect(() => {
+    if (search.subscribe) {
+      try {
+        // Decode the URL
+        const url = decodeURIComponent(search.subscribe);
+
+        // Validate it's a proper URL
+        new URL(url);
+
+        // Pre-populate the form
+        setShowAddForm(true);
+        setNewSubUrl(url);
+
+        // Clear the parameter from URL (don't keep it in browser history)
+        navigate({
+          to: "/app/subscriptions",
+          search: { subscribe: undefined },
+          replace: true,
+        });
+
+        // Show helpful message
+        toast.info("Feed URL loaded - review and confirm subscription");
+      } catch {
+        // Invalid URL provided
+        toast.error("Invalid feed URL provided");
+
+        // Still clear the parameter
+        navigate({
+          to: "/app/subscriptions",
+          search: { subscribe: undefined },
+          replace: true,
+        });
+      }
+    }
+  }, [search.subscribe, navigate]);
 
   const handleAdd = useCallback(async () => {
     if (!newSubUrl) {
@@ -1089,7 +1131,10 @@ function SubscriptionsPage() {
                         >
                           <Link
                             to="/app/articles"
-                            search={{ subscription_id: sub.id }}
+                            search={{
+                              category_id: undefined,
+                              subscription_id: sub.id,
+                            }}
                           >
                             <Newspaper className="size-4" aria-hidden="true" />
                           </Link>
