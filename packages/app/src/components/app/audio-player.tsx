@@ -10,12 +10,21 @@ import {
   ScrubBarTrack,
 } from "@/components/ui/scrub-bar";
 import { useAudio } from "@/contexts/audio-context";
+import {
+  useAudioProgressSync,
+  useAudioProgressRestore,
+} from "@/lib/hooks/useAudioProgress";
 
 interface AudioPlayerProps {
   audioUrl: string;
   articleId: number;
   title?: string;
   className?: string;
+  audioProgress?: {
+    position: number;
+    duration: number | null;
+    completedAt: Date | null;
+  } | null;
 }
 
 export function AudioPlayer({
@@ -23,13 +32,13 @@ export function AudioPlayer({
   articleId,
   title,
   className,
+  audioProgress,
 }: AudioPlayerProps) {
   const {
     currentAudioId,
     isPlaying,
     currentTime,
     duration,
-    playAudio,
     pauseAudio,
     seekTo,
   } = useAudio();
@@ -38,12 +47,18 @@ export function AudioPlayer({
   const isCurrentAudio = currentAudioId === articleId;
   const isCurrentlyPlaying = isCurrentAudio && isPlaying;
 
+  // Auto-sync progress during playback
+  useAudioProgressSync(articleId);
+
+  // Restore progress on play
+  const { play } = useAudioProgressRestore(articleId, audioUrl, audioProgress);
+
   const handlePlayPause = () => {
     if (isCurrentlyPlaying) {
       pauseAudio();
     } else {
       setIsLoading(true);
-      playAudio(articleId, audioUrl);
+      play();
       // Loading state will be cleared when audio starts playing
       setTimeout(() => setIsLoading(false), 1000);
     }

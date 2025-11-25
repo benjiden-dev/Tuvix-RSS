@@ -43,6 +43,15 @@ function transformArticleRow(row: {
     createdAt: row.articles.createdAt,
     read: row.user_article_states?.read ?? false,
     saved: row.user_article_states?.saved ?? false,
+    // Audio playback progress
+    audioProgress: row.user_article_states?.audioPosition
+      ? {
+          position: row.user_article_states.audioPosition,
+          duration: row.user_article_states.audioDuration,
+          completedAt: row.user_article_states.audioCompletedAt,
+          lastPlayedAt: row.user_article_states.audioLastPlayedAt,
+        }
+      : null,
     source: {
       id: row.sources.id,
       url: row.sources.url,
@@ -592,6 +601,187 @@ export const articlesRouter = router({
             updatedAt: new Date(),
           },
         });
+
+      return { success: true };
+    }),
+
+  /**
+   * Update audio playback progress
+   * Auto-throttled on client side to prevent excessive writes
+   */
+  updateAudioProgress: rateLimitedProcedure
+    .input(
+      z.object({
+        articleId: z.number(),
+        position: z.number().min(0),
+        duration: z.number().min(0).optional(),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Get existing state to preserve other flags
+      const existing = await withQueryMetrics(
+        "articles.updateAudioProgress.getState",
+        async () =>
+          ctx.db
+            .select()
+            .from(schema.userArticleStates)
+            .where(
+              and(
+                eq(schema.userArticleStates.userId, userId),
+                eq(schema.userArticleStates.articleId, input.articleId)
+              )
+            )
+            .limit(1),
+        {
+          "db.table": "user_article_states",
+          "db.operation": "select",
+          "db.user_id": userId,
+        }
+      );
+
+      // Check if audio is completed (>95% watched or within 30s of end)
+      const isCompleted = input.duration
+        ? input.position / input.duration > 0.95 ||
+          input.duration - input.position < 30
+        : false;
+
+      // Upsert with preserved flags
+      await withQueryMetrics(
+        "articles.updateAudioProgress.upsert",
+        async () =>
+          ctx.db
+            .insert(schema.userArticleStates)
+            .values({
+              userId,
+              articleId: input.articleId,
+              read: existing[0]?.read ?? false,
+              saved: existing[0]?.saved ?? false,
+              audioPosition: input.position,
+              audioDuration: input.duration ?? existing[0]?.audioDuration,
+              audioCompletedAt: isCompleted
+                ? new Date()
+                : existing[0]?.audioCompletedAt,
+              audioLastPlayedAt: new Date(),
+            })
+            .onConflictDoUpdate({
+              target: [
+                schema.userArticleStates.userId,
+                schema.userArticleStates.articleId,
+              ],
+              set: {
+                audioPosition: input.position,
+                audioDuration: input.duration ?? existing[0]?.audioDuration,
+                audioCompletedAt: isCompleted
+                  ? new Date()
+                  : existing[0]?.audioCompletedAt,
+                audioLastPlayedAt: new Date(),
+                updatedAt: new Date(),
+              },
+            }),
+        {
+          "db.table": "user_article_states",
+          "db.operation": "upsert",
+          "db.user_id": userId,
+          "db.is_completed": isCompleted,
+        }
+      );
+
+      return { success: true };
+    }),
+
+  /**
+   * Mark audio as completed
+   * Called when user finishes listening
+   */
+  markAudioCompleted: rateLimitedProcedure
+    .input(z.object({ articleId: z.number() }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Get existing state
+      const existing = await ctx.db
+        .select()
+        .from(schema.userArticleStates)
+        .where(
+          and(
+            eq(schema.userArticleStates.userId, userId),
+            eq(schema.userArticleStates.articleId, input.articleId)
+          )
+        )
+        .limit(1);
+
+      // Upsert with completed timestamp and mark as read
+      await ctx.db
+        .insert(schema.userArticleStates)
+        .values({
+          userId,
+          articleId: input.articleId,
+          read: true,
+          saved: existing[0]?.saved ?? false,
+          audioPosition: existing[0]?.audioPosition ?? 0,
+          audioDuration: existing[0]?.audioDuration,
+          audioCompletedAt: new Date(),
+          audioLastPlayedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [
+            schema.userArticleStates.userId,
+            schema.userArticleStates.articleId,
+          ],
+          set: {
+            read: true,
+            audioCompletedAt: new Date(),
+            audioLastPlayedAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+
+      return { success: true };
+    }),
+
+  /**
+   * Clear audio progress (restart from beginning)
+   */
+  clearAudioProgress: rateLimitedProcedure
+    .input(z.object({ articleId: z.number() }))
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { userId } = ctx.user;
+
+      // Get existing state
+      const existing = await ctx.db
+        .select()
+        .from(schema.userArticleStates)
+        .where(
+          and(
+            eq(schema.userArticleStates.userId, userId),
+            eq(schema.userArticleStates.articleId, input.articleId)
+          )
+        )
+        .limit(1);
+
+      if (existing.length === 0) {
+        return { success: true };
+      }
+
+      // Update to clear progress
+      await ctx.db
+        .update(schema.userArticleStates)
+        .set({
+          audioPosition: 0,
+          audioCompletedAt: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(schema.userArticleStates.userId, userId),
+            eq(schema.userArticleStates.articleId, input.articleId)
+          )
+        );
 
       return { success: true };
     }),

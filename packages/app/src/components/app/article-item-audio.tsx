@@ -233,6 +233,7 @@ export function ArticleItemAudio({
                     audioUrl={article.audioUrl}
                     articleId={article.id}
                     title={article.title || undefined}
+                    audioProgress={article.audioProgress}
                   />
                 </div>
               )}

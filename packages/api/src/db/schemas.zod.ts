@@ -120,6 +120,15 @@ export const updateArticleSchema = insertArticleSchema.partial();
 export const articleWithSourceSchema = selectArticleSchema.extend({
   read: z.boolean().optional().default(false),
   saved: z.boolean().optional().default(false),
+  audioProgress: z
+    .object({
+      position: z.number(),
+      duration: z.number().nullable(),
+      completedAt: z.date().nullable(),
+      lastPlayedAt: z.date().nullable(),
+    })
+    .nullable()
+    .optional(),
   source: createSelectSchema(schema.sources).optional(),
 });
 

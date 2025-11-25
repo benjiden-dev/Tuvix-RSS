@@ -253,6 +253,11 @@ export const userArticleStates = sqliteTable(
       .references(() => articles.id, { onDelete: "cascade" }),
     read: integer("read", { mode: "boolean" }).notNull().default(false),
     saved: integer("saved", { mode: "boolean" }).notNull().default(false),
+    // Audio playback progress fields
+    audioPosition: integer("audio_position").default(0),
+    audioDuration: integer("audio_duration"),
+    audioCompletedAt: integer("audio_completed_at", { mode: "timestamp" }),
+    audioLastPlayedAt: integer("audio_last_played_at", { mode: "timestamp" }),
     updatedAt: integer("updated_at", { mode: "timestamp" })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -262,6 +267,7 @@ export const userArticleStates = sqliteTable(
     index("idx_user_article_states_user_id").on(table.userId),
     index("idx_user_article_states_read").on(table.read),
     index("idx_user_article_states_saved").on(table.saved),
+    index("idx_user_article_states_audio_position").on(table.audioPosition),
   ]
 );
 

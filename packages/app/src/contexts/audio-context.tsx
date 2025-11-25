@@ -7,7 +7,11 @@ interface AudioContextValue {
   currentTime: number;
   duration: number;
   audioUrl: string | null;
-  playAudio: (articleId: number, audioUrl: string) => void;
+  playAudio: (
+    articleId: number,
+    audioUrl: string,
+    startPosition?: number,
+  ) => void;
   pauseAudio: () => void;
   stopAudio: () => void;
   seekTo: (time: number) => void;
@@ -71,7 +75,7 @@ function AudioContextProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const playAudio = React.useCallback(
-    (articleId: number, url: string) => {
+    (articleId: number, url: string, startPosition?: number) => {
       const audio = audioRef.current;
       if (!audio) return;
 
@@ -82,6 +86,12 @@ function AudioContextProvider({ children }: { children: React.ReactNode }) {
         setAudioUrl(url);
         setCurrentTime(0);
         audio.load();
+
+        // Restore progress if provided
+        if (startPosition !== undefined && startPosition > 0) {
+          audio.currentTime = startPosition;
+          setCurrentTime(startPosition);
+        }
       }
 
       audio.play().catch((error) => {
