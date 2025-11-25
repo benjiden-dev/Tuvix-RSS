@@ -173,24 +173,49 @@ jobs:
           echo "Using API URL: $API_URL"
 
       - name: Verify Sentry Configuration
+        id: verify-sentry
         env:
           VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
         run: |
-          if [ -z "$VITE_SENTRY_DSN" ]; then
-            echo "⚠️  WARNING: VITE_SENTRY_DSN secret is not set in GitHub Secrets"
+          echo "🔍 Checking VITE_SENTRY_DSN secret..."
+          echo "Secret exists check: ${{ secrets.VITE_SENTRY_DSN != '' }}"
+          echo "Secret length: ${#VITE_SENTRY_DSN}"
+          echo "Secret starts with: ${VITE_SENTRY_DSN:0:20}..."
+          
+          if [ -z "$VITE_SENTRY_DSN" ] || [ "$VITE_SENTRY_DSN" = "" ]; then
+            echo "⚠️  WARNING: VITE_SENTRY_DSN secret is not set or is empty in GitHub Secrets"
             echo "   Frontend Sentry will not be initialized."
             echo "   Set it in: Settings → Secrets and variables → Actions → VITE_SENTRY_DSN"
+            echo "has_dsn=false" >> $GITHUB_OUTPUT
           else
             echo "✅ VITE_SENTRY_DSN is configured (length: ${#VITE_SENTRY_DSN} chars)"
+            echo "has_dsn=true" >> $GITHUB_OUTPUT
+            echo "dsn_length=${#VITE_SENTRY_DSN}" >> $GITHUB_OUTPUT
           fi
 
       - name: Build App
         env:
           VITE_API_URL: ${{ env.API_URL }}
           VITE_APP_VERSION: ${{ steps.deployment-version.outputs.version }}
-          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
           VITE_SENTRY_ENVIRONMENT: ${{ secrets.VITE_SENTRY_ENVIRONMENT || 'development' }}
-        run: pnpm run build:app
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+        run: |
+          echo "🔍 Build-time Sentry DSN check:"
+          echo "VITE_SENTRY_DSN type: $(if [ -z "$VITE_SENTRY_DSN" ]; then echo 'unset'; else echo 'set'; fi)"
+          echo "VITE_SENTRY_DSN length: ${#VITE_SENTRY_DSN}"
+          echo "VITE_SENTRY_DSN starts with: ${VITE_SENTRY_DSN:0:20}..."
+          echo "Verification step result: ${{ steps.verify-sentry.outputs.has_dsn }}"
+          
+          # Verify the DSN is actually set and not empty
+          if [ -z "$VITE_SENTRY_DSN" ] || [ "$VITE_SENTRY_DSN" = "" ]; then
+            echo "❌ ERROR: VITE_SENTRY_DSN is empty or unset during build!"
+            echo "   This will cause Sentry to not initialize in the frontend."
+            echo "   Check that the secret is set correctly in GitHub Secrets."
+            exit 1
+          fi
+          
+          echo "✅ Building with Sentry DSN configured (length: ${#VITE_SENTRY_DSN} chars)"
+          pnpm run build:app
 
       - name: Deploy to Cloudflare Pages
         id: deploy-app
