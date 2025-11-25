@@ -46,7 +46,6 @@ export class StandardDiscoveryService implements DiscoveryService {
         },
       },
       async (span) => {
-        /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
         const discoveredFeeds: DiscoveredFeed[] = [];
 
         try {
@@ -253,7 +252,6 @@ export class StandardDiscoveryService implements DiscoveryService {
           });
           return [];
         }
-        /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
       }
     );
   }

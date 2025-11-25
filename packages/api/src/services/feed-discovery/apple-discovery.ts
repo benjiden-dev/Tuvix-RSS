@@ -98,7 +98,6 @@ export class AppleDiscoveryService implements DiscoveryService {
         },
       },
       async (span) => {
-        /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
         try {
           // Extract podcast ID from URL
           const podcastId = this.extractPodcastId(url);
@@ -259,7 +258,6 @@ export class AppleDiscoveryService implements DiscoveryService {
           });
           return [];
         }
-        /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
       }
     );
   }

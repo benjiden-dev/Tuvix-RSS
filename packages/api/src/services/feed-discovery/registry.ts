@@ -55,7 +55,6 @@ export class DiscoveryRegistry {
         },
       },
       async (span) => {
-        /* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
         // Create shared discovery context for deduplication
         const seenUrls = new Set<string>();
         const seenFeedIds = new Set<string>();
@@ -159,7 +158,6 @@ export class DiscoveryRegistry {
           code: "NOT_FOUND",
           message: "No RSS or Atom feeds found on this website",
         });
-        /* eslint-enable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
       }
     );
   }
