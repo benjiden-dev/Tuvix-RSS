@@ -219,26 +219,7 @@ export function ArticleItemAudio({
 
         <ItemContent className="gap-4">
           {/* Audio article layout */}
-          <div className={cn("flex gap-4", isMobile ? "flex-col" : "")}>
-            {/* Podcast artwork */}
-            {article.imageUrl && (
-              <div className="shrink-0">
-                <img
-                  src={article.imageUrl}
-                  alt={article.title || "Podcast artwork"}
-                  className={cn(
-                    "object-cover rounded-lg",
-                    isMobile ? "w-full h-64" : "w-32 h-32",
-                  )}
-                  onError={(e) => {
-                    // Hide image if it fails to load
-                    e.currentTarget.style.display = "none";
-                  }}
-                  loading="lazy"
-                />
-              </div>
-            )}
-
+          <div className={cn("flex gap-4", isMobile && "flex-col")}>
             {/* Content area */}
             <div className="flex-1 space-y-3">
               <ItemTitle className="w-full text-xl font-bold leading-tight group-hover:text-primary transition-colors line-clamp-2">
@@ -263,6 +244,25 @@ export function ArticleItemAudio({
                 </ItemDescription>
               )}
             </div>
+
+            {/* Podcast artwork - fallback to source icon if no article image */}
+            {(article.imageUrl || article.source?.iconUrl) && (
+              <div className="shrink-0">
+                <img
+                  src={article.imageUrl || article.source?.iconUrl || ""}
+                  alt={article.title || "Podcast artwork"}
+                  className={cn(
+                    "object-cover rounded-lg",
+                    isMobile ? "w-full h-48" : "w-32 h-32",
+                  )}
+                  onError={(e) => {
+                    // Hide image if it fails to load
+                    e.currentTarget.style.display = "none";
+                  }}
+                  loading="lazy"
+                />
+              </div>
+            )}
           </div>
         </ItemContent>
 
