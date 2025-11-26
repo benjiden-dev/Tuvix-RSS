@@ -135,10 +135,10 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
       enabled: true,
       // Registration and email verification controlled by globalSettings
       // Note: disableSignUp is checked dynamically in hooks
-      // requireEmailVerification must be true to enable the /api/auth/verify-email endpoint
-      // The actual enforcement of verification is handled in tRPC middleware
+      // Email verification enforcement is handled in tRPC middleware, not here
+      // Removing requireEmailVerification allows session creation during signup
       disableSignUp: false, // Checked dynamically in hooks
-      requireEmailVerification: true, // Enables the verify-email endpoint
+      // autoSignIn defaults to true - session created on signup
       sendResetPassword: async ({ user, url, token }) => {
         // Wrap password reset email in Sentry span
         return await Sentry.startSpan(
