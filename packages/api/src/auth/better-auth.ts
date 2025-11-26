@@ -57,9 +57,15 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
     return requestCache.settings;
   };
 
-  // Get base URL for email links
-  const baseUrl =
-    env.BASE_URL || env.BETTER_AUTH_URL || "http://localhost:5173";
+  // Get base URL for Better Auth API endpoints
+  // In production: This should be the API URL (e.g., https://api.tuvix.app)
+  // In development: This can be the frontend URL since both run on localhost
+  const apiUrl = env.BETTER_AUTH_URL || "http://localhost:5173";
+
+  // Get frontend URL for redirects after email verification
+  // In production: This should be the frontend URL (e.g., https://feed.tuvix.app)
+  // In development: Same as API URL
+  const frontendUrl = env.BASE_URL || apiUrl;
 
   // Configure trusted origins from CORS_ORIGIN (comma-separated)
   const trustedOrigins = env.CORS_ORIGIN
@@ -90,7 +96,7 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
       },
     }),
     secret: env.BETTER_AUTH_SECRET || "",
-    baseURL: baseUrl,
+    baseURL: apiUrl,
     basePath: "/api/auth",
     trustedOrigins: trustedOrigins.length > 0 ? trustedOrigins : undefined,
     telemetry: {
@@ -124,10 +130,11 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
     emailAndPassword: {
       enabled: true,
       // Registration and email verification controlled by globalSettings
-      // Note: disableSignUp and requireEmailVerification are checked dynamically
-      // Better Auth doesn't support dynamic config, so we check in hooks/middleware
+      // Note: disableSignUp is checked dynamically in hooks
+      // requireEmailVerification must be true to enable the /api/auth/verify-email endpoint
+      // The actual enforcement of verification is handled in tRPC middleware
       disableSignUp: false, // Checked dynamically in hooks
-      requireEmailVerification: false, // Checked dynamically in hooks
+      requireEmailVerification: true, // Enables the verify-email endpoint
       sendResetPassword: async ({ user, url, token }) => {
         const userWithPlugins = user as BetterAuthUser;
         const emailResult = await sendPasswordResetEmail(env, {
@@ -237,94 +244,68 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
     },
     // Email verification configuration
     emailVerification: {
-      sendVerificationEmail: async ({ user, url, token }) => {
-        // Make this completely non-blocking to avoid CPU timeout
-        // Better Auth will wait for this callback, so we need to return immediately
-        // and do all work asynchronously
+      sendVerificationEmail: async ({ user, url, token }, request) => {
+        // Check if email verification is required
+        let requireVerification = false;
+        try {
+          const settings = await getCachedSettings();
+          requireVerification = settings.requireEmailVerification;
+        } catch (error) {
+          console.error("Failed to get global settings:", error);
+          return; // Skip if settings unavailable
+        }
 
-        // Fire and forget - don't block the request
-        void (async () => {
-          try {
-            // Check if email verification is required (non-blocking)
-            let requireVerification = false;
-            try {
-              const settings = await getCachedSettings();
-              requireVerification = settings.requireEmailVerification;
-            } catch (error) {
-              // If settings don't exist, skip verification
-              console.error("Failed to get global settings:", error);
-              return;
-            }
+        if (!requireVerification) {
+          return; // Skip sending if not required
+        }
 
-            if (!requireVerification) {
-              // Skip sending if not required
-              return;
-            }
+        const userWithPlugins = user as BetterAuthUser;
 
-            // Send verification email (Sentry spans are handled in the email service)
-            const userWithPlugins = user as BetterAuthUser;
+        // Create email sending promise
+        const emailPromise = sendVerificationEmail(env, {
+          to: user.email,
+          username:
+            (userWithPlugins.username as string | undefined) ||
+            user.name ||
+            "User",
+          verificationToken: token,
+          verificationUrl: url,
+        }).catch((error) => {
+          // Log critical email failures to Sentry
+          Sentry.captureException(error, {
+            tags: {
+              component: "better-auth",
+              operation: "email-verification",
+              email_type: "verification",
+            },
+            extra: {
+              userEmail: user.email,
+              userId: user.id,
+            },
+            level: "error",
+          });
 
-            // Fire and forget - don't block the request
-            // Check result.success since email functions always resolve (never reject)
-            sendVerificationEmail(env, {
-              to: user.email,
-              username:
-                (userWithPlugins.username as string | undefined) ||
-                user.name ||
-                "User",
-              verificationToken: token,
-              verificationUrl: url,
-            })
-              .then((result) => {
-                // Email functions always resolve, so check success flag
-                if (!result.success) {
-                  console.error(
-                    "Failed to send verification email (non-blocking):",
-                    {
-                      userEmail: user.email,
-                      userId: user.id,
-                      error: result.error || "Unknown error",
-                    }
-                  );
-                }
-              })
-              .catch((error) => {
-                // Only catches unexpected promise rejections (shouldn't happen)
-                console.error(
-                  "Unexpected error in verification email promise:",
-                  {
-                    userEmail: user.email,
-                    userId: user.id,
-                    error:
-                      error instanceof Error ? error.message : String(error),
-                  }
-                );
-              });
-          } catch (error) {
-            // Catch any unexpected errors to prevent breaking the sign-up process
-            // Email sending failures should not prevent user registration
-            // Keep error handling minimal to avoid CPU timeout
-            const errorMessage =
-              error instanceof Error ? error.message : String(error);
-            console.error(
-              "Unexpected error in sendVerificationEmail callback:",
-              errorMessage,
-              {
-                userEmail: user.email,
-                userId: user.id,
-              }
-            );
-            // Don't throw - allow registration to proceed even if email fails
-            // Sentry will capture console.error via consoleLoggingIntegration
-          }
-        })();
+          console.error("Failed to send verification email:", {
+            userEmail: user.email,
+            userId: user.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
 
-        // Return immediately to avoid blocking Better Auth
+        // For Cloudflare Workers: Use waitUntil to ensure email sends without blocking
+        // For Node.js: This property won't exist, fire-and-forget is acceptable
+        if (request && typeof (request as any).waitUntil === "function") {
+          (request as any).waitUntil(emailPromise);
+        }
+
+        // Return immediately to avoid blocking signup
         return;
       },
       sendOnSignUp: true, // Callback checks requireEmailVerification setting dynamically
       autoSignInAfterVerification: true,
       expiresIn: 3600, // 1 hour
+      // Redirect to frontend after successful verification
+      callbackURL: frontendUrl,
     },
     // Hooks for security audit logging and welcome emails
     hooks: {
@@ -373,109 +354,47 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
               }
             }
 
-            // Create user in legacy users table for foreign key compatibility
-            // The old migrations reference users.id, so we need to maintain both tables
-            // Make this non-blocking to avoid CPU timeout
-            // Use void to fire-and-forget
-            void (async () => {
-              try {
-                const userWithPlugins = user as BetterAuthUser;
-                const username = userWithPlugins.username || user.name || "";
-                const role = userWithPlugins.role || "user";
-                const plan =
-                  (userWithPlugins.plan as string | undefined) || "free";
-                const now = Date.now();
-
-                // Get the account password if available (for email/password signups)
-                const account = await database
-                  .select()
-                  .from(schema.account)
-                  .where(eq(schema.account.userId, Number(user.id)))
-                  .limit(1);
-
-                const password = account[0]?.password || "";
-
-                // Access the underlying SQLite client for raw SQL execution
-                // Only works for better-sqlite3, not D1
-                // Type assertion needed because Database type is a union of D1 and SQLite
-                const sqliteClient = (
-                  database as unknown as {
-                    $client?: {
-                      prepare: (sql: string) => {
-                        run: (...args: unknown[]) => void;
-                      };
-                    };
-                  }
-                ).$client;
-                if (sqliteClient) {
-                  sqliteClient
-                    .prepare(
-                      `INSERT OR IGNORE INTO users (id, username, email, password, role, plan, banned, created_at, updated_at) 
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-                    )
-                    .run(
-                      Number(user.id),
-                      username,
-                      user.email,
-                      password,
-                      role,
-                      plan,
-                      0, // banned as integer (false)
-                      now,
-                      now
-                    );
-                }
-              } catch (error) {
-                // If users table doesn't exist or insert fails, log but don't fail registration
-                // This is a compatibility layer for old migrations
-                console.warn(
-                  `Failed to create user in legacy users table: ${error instanceof Error ? error.message : "Unknown error"}`
-                );
-              }
-            })();
-
             // Note: Registration event logging is handled in the register endpoint
             // after the user is created in the user table, to avoid foreign key constraint issues
 
-            // Send welcome email (only if email verification is not required or already verified)
-            // Note: Verification emails are handled by Better Auth's sendVerificationEmail callback
-            // Make email sending non-blocking to avoid CPU timeout
+            // Send welcome email based on verification requirements
+            // Logic:
+            // 1. If verification is NOT required: Send welcome email immediately
+            // 2. If verification IS required but user is already verified: Send welcome email
+            //    (This handles edge cases like admins or pre-verified emails)
+            // 3. If verification IS required and user is NOT verified: Skip welcome email
+            //    (User receives verification email instead; welcome email sent after verification)
             try {
               const settings = await getCachedSettings();
-              if (!settings.requireEmailVerification || user.emailVerified) {
-                const appUrl = baseUrl;
+              const shouldSendWelcome =
+                !settings.requireEmailVerification || user.emailVerified;
+
+              if (shouldSendWelcome) {
+                const appUrl = frontendUrl;
                 const userWithPlugins = user as BetterAuthUser;
 
-                // Fire and forget - don't block the request
-                // Check result.success since email functions always resolve (never reject)
-                sendWelcomeEmail(env, {
+                // Create welcome email promise
+                const welcomePromise = sendWelcomeEmail(env, {
                   to: user.email,
                   username:
                     (userWithPlugins.username as string | undefined) ||
                     user.name ||
                     "User",
                   appUrl,
-                })
-                  .then((result) => {
-                    // Email functions always resolve, so check success flag
-                    if (!result.success) {
-                      console.error(
-                        `Failed to send welcome email to ${user.email}:`,
-                        result.error || "Unknown error"
-                      );
-                    }
-                  })
-                  .catch((error) => {
-                    // Only catches unexpected promise rejections (shouldn't happen)
-                    console.error(
-                      `Unexpected error in welcome email promise for ${user.email}:`,
-                      error instanceof Error ? error.message : String(error)
-                    );
+                }).catch((error) => {
+                  // Log email failures
+                  console.error(`Failed to send welcome email to ${user.email}:`, {
+                    error: error instanceof Error ? error.message : String(error),
                   });
+                });
+
+                // Use waitUntil if available (Cloudflare Workers)
+                if (ctx.headers && typeof (ctx as any).waitUntil === "function") {
+                  (ctx as any).waitUntil(welcomePromise);
+                }
               }
             } catch (error) {
-              // Don't block registration if email check fails
-              console.error(`Error checking email settings:`, error);
+              console.error(`Error sending welcome email:`, error);
             }
           }
         }

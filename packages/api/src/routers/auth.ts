@@ -23,7 +23,11 @@ import { getGlobalSettings } from "@/services/global-settings";
 import * as schema from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { DEFAULT_USER_PLAN, ADMIN_PLAN } from "@/config/plans";
-import { usernameValidator, emailValidator } from "@/types/validators";
+import {
+  usernameValidator,
+  emailValidator,
+  passwordValidator,
+} from "@/types/validators";
 import { getBaseUrl } from "@/utils/base-url";
 import * as Sentry from "@/utils/sentry";
 import { emitCounter, emitMetrics } from "@/utils/metrics";
@@ -45,7 +49,7 @@ export const authRouter = router({
       z.object({
         username: usernameValidator,
         email: emailValidator,
-        password: z.string().min(8), // Better Auth default minimum
+        password: passwordValidator,
       })
     )
     .mutation(async ({ ctx, input }) => {
@@ -183,9 +187,7 @@ export const authRouter = router({
                     role = "admin";
                     plan = ADMIN_PLAN;
                     isFirstUser = true;
-                    console.log(
-                      "⚠️  First user registered - automatically promoted to admin"
-                    );
+                    // Note: First user admin promotion is logged in security audit log
 
                     await ctx.db
                       .update(schema.user)
@@ -251,6 +253,51 @@ export const authRouter = router({
                 }
 
                 span?.setAttribute("auth.user_data_initialized", true);
+              }
+            );
+
+            // STEP 4: Security Audit Logging
+            await Sentry.startSpan(
+              {
+                name: "auth.signup.audit_log",
+                op: "db.insert",
+              },
+              async (span) => {
+                const { logSecurityEvent, getClientIp, getUserAgent } =
+                  await import("@/auth/security");
+
+                // Extract IP and user agent from request headers
+                const headers: Record<string, string | undefined> = {};
+                if (ctx.req.headers) {
+                  if (ctx.req.headers instanceof Headers) {
+                    ctx.req.headers.forEach((value, key) => {
+                      headers[key.toLowerCase()] = value;
+                    });
+                  } else {
+                    Object.entries(ctx.req.headers).forEach(([key, value]) => {
+                      headers[key.toLowerCase()] = String(value);
+                    });
+                  }
+                }
+
+                const ipAddress = getClientIp(headers);
+                const userAgent = getUserAgent(headers);
+
+                // Log successful registration
+                await logSecurityEvent(ctx.db, {
+                  userId: userId!,
+                  action: isFirstUser ? "admin_first_user" : "register",
+                  ipAddress,
+                  userAgent,
+                  success: true,
+                  metadata: {
+                    method: "email_password",
+                    is_first_user: isFirstUser,
+                    verification_required: settings.requireEmailVerification,
+                  },
+                });
+
+                span?.setAttribute("auth.audit_logged", true);
               }
             );
 
@@ -647,7 +694,7 @@ export const authRouter = router({
     .input(
       z.object({
         currentPassword: z.string(),
-        newPassword: z.string().min(8), // Better Auth default minimum
+        newPassword: passwordValidator,
       })
     )
     .output(z.object({ success: z.boolean() }))
@@ -794,7 +841,7 @@ export const authRouter = router({
     .input(
       z.object({
         token: z.string(),
-        newPassword: z.string().min(8), // Better Auth default minimum
+        newPassword: passwordValidator,
       })
     )
     .output(z.object({ success: z.boolean() }))

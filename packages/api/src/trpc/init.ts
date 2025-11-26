@@ -24,16 +24,19 @@ const t = initTRPC.context<Context>().create({
     });
 
     // Capture to Sentry (if available and configured)
-    // Filter out UNAUTHORIZED errors to reduce noise (these are expected)
-    if (
-      ctx?.env?.SENTRY_DSN &&
-      error.code !== "UNAUTHORIZED" &&
-      error.code !== "NOT_FOUND"
-    ) {
+    // Filter out expected errors to reduce noise
+    const isExpectedError =
+      error.code === "UNAUTHORIZED" ||
+      error.code === "NOT_FOUND" ||
+      // Filter out email verification FORBIDDEN errors (these are expected)
+      (error.code === "FORBIDDEN" &&
+        error.message.includes("Email verification required"));
+
+    if (ctx?.env?.SENTRY_DSN && !isExpectedError) {
       // Try to import and use Sentry
       import("@sentry/cloudflare")
-        .then(async (Sentry) => {
-          await Sentry.captureException(error, {
+        .then((Sentry) => {
+          Sentry.captureException(error, {
             tags: {
               trpc_code: error.code,
               trpc_path: shape.data.path || "unknown",

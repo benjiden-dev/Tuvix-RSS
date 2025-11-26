@@ -88,7 +88,7 @@ export interface Env {
 
   // Authentication
   BETTER_AUTH_SECRET?: string; // Better Auth secret
-  BETTER_AUTH_URL?: string; // Better Auth base URL (uses BASE_URL if not set)
+  BETTER_AUTH_URL?: string; // API URL where Better Auth is hosted (e.g., https://api.tuvix.app)
 
   // Admin Bootstrap
   ADMIN_USERNAME?: string;
@@ -115,7 +115,7 @@ export interface Env {
   // Optional Services
   RESEND_API_KEY?: string;
   EMAIL_FROM?: string;
-  BASE_URL?: string; // Base URL for generating public feed URLs
+  BASE_URL?: string; // Frontend URL for redirects after verification (e.g., https://feed.tuvix.app)
 
   // Optional
   PORT?: string;

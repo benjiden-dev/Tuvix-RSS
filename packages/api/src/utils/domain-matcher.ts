@@ -28,3 +28,4 @@ export function isSubdomainOf(domain: string, baseDomain: string): boolean {
   // Check if domain ends with .baseDomain
   return normalizedDomain.endsWith(`.${normalizedBase}`);
 }
+

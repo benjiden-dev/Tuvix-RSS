@@ -15,7 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { useRegister } from "@/lib/hooks/useAuth";
 
-// Better Auth defaults: username 3-30 chars, password min 8 chars
+// Better Auth defaults: username 3-30 chars
+// Password complexity requirements match backend validation
 const formSchema = z
   .object({
     username: z
@@ -23,7 +24,17 @@ const formSchema = z
       .min(3, "Username must be at least 3 characters")
       .max(30, "Username must not exceed 30 characters"),
     email: z.string().email("Must be a valid email address"),
-    password: z.string().min(8, "Password must be at least 8 characters"),
+    password: z
+      .string()
+      .min(8, "Password must be at least 8 characters")
+      .max(128, "Password must not exceed 128 characters")
+      .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+      .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+      .regex(/[0-9]/, "Password must contain at least one number")
+      .regex(
+        /[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/,
+        "Password must contain at least one special character"
+      ),
     confirmPassword: z.string(),
   })
   .refine((data) => data.password === data.confirmPassword, {
@@ -114,7 +125,14 @@ export function RegisterForm() {
                 />
               </FormControl>
               <FormDescription>
-                Minimum 8 characters (Better Auth default validation).
+                Password must contain:
+                <ul className="list-disc list-inside text-xs mt-1 space-y-0.5">
+                  <li>At least 8 characters</li>
+                  <li>One uppercase letter (A-Z)</li>
+                  <li>One lowercase letter (a-z)</li>
+                  <li>One number (0-9)</li>
+                  <li>One special character (!@#$%^&*...)</li>
+                </ul>
               </FormDescription>
               <FormMessage />
             </FormItem>

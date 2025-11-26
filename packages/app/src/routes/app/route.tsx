@@ -78,13 +78,19 @@ export const Route = createFileRoute("/app")({
         }
       }
     } catch (error) {
-      // Re-throw redirects, allow access on other errors
+      // Re-throw redirects (TanStack Router redirects are Response objects with isRedirect property)
       if (error && typeof error === "object" && "isRedirect" in error) {
         throw error;
       }
 
-      // Handle Response objects specially - extract useful info
+      // Handle Response objects - check if it's a redirect status code
       if (error instanceof Response) {
+        // 3xx status codes are redirects - re-throw them to let the router handle them
+        if (error.status >= 300 && error.status < 400) {
+          throw error;
+        }
+
+        // Log non-redirect HTTP errors
         const responseError = new Error(
           `HTTP ${error.status} ${error.statusText}`,
         );

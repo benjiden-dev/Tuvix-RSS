@@ -37,6 +37,9 @@ function VerifyEmailPage() {
       retry: false,
     });
 
+  // Check if user is admin (admins may bypass verification)
+  const isAdmin = user?.role === "admin";
+
   const resendMutation = trpc.auth.resendVerificationEmail.useMutation({
     onSuccess: (data) => {
       toast.success(data.message || "Verification email sent!");
@@ -146,19 +149,29 @@ function VerifyEmailPage() {
                 </p>
               </div>
 
-              <div className="pt-4 border-t">
-                <Button
-                  variant="outline"
-                  onClick={() => navigate({ to: "/app/articles" })}
-                  className="w-full"
-                >
-                  Continue to App
-                </Button>
-                <p className="text-xs text-muted-foreground text-center mt-2">
-                  Note: Some features may be limited until your email is
-                  verified.
-                </p>
-              </div>
+              {/* Only show Continue button if verification not required OR user is admin */}
+              {(!verificationStatus?.requiresVerification || isAdmin) && (
+                <div className="pt-4 border-t">
+                  <Button
+                    variant="outline"
+                    onClick={() => navigate({ to: "/app/articles" })}
+                    className="w-full"
+                  >
+                    Continue to App
+                  </Button>
+                  {isAdmin && verificationStatus?.requiresVerification && (
+                    <p className="text-xs text-muted-foreground text-center mt-2">
+                      As an admin, you can access the app without verifying your
+                      email.
+                    </p>
+                  )}
+                  {!verificationStatus?.requiresVerification && (
+                    <p className="text-xs text-muted-foreground text-center mt-2">
+                      Email verification is not required for your account.
+                    </p>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
