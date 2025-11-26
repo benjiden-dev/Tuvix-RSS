@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import { trpc } from "../api/trpc";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
+import { useRefreshFeeds } from "./useArticles";
 
 // Categories
 export const useCategories = () => {
@@ -90,12 +91,14 @@ export const useCreateSubscription = () => {
 };
 
 /**
- * Hook for creating subscriptions with delayed article refetch.
- * Reuses the standard subscription creation logic and adds a delayed refetch
- * of articles after 5 seconds to allow server-side feed processing.
+ * Hook for creating subscriptions with server-side feed refresh.
+ * Reuses the standard subscription creation logic and:
+ * 1. Triggers server-side feed refresh to fetch articles from the new subscription
+ * 2. Does a delayed client-side refetch after 5 seconds to display the new articles
  */
 export const useCreateSubscriptionWithRefetch = () => {
   const createSubscription = useCreateSubscription();
+  const refreshFeeds = useRefreshFeeds();
   const queryClient = useQueryClient();
   const refetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -121,22 +124,21 @@ export const useCreateSubscriptionWithRefetch = () => {
       clearTimeout(refetchTimeoutRef.current);
     }
 
-    try {
-      await createSubscription.mutateAsync(input);
+    await createSubscription.mutateAsync(input);
 
-      // Delayed refetch of articles to show new articles smoothly
-      // Feed processing happens server-side and can take a few seconds
-      refetchTimeoutRef.current = setTimeout(() => {
-        queryClient.refetchQueries({
-          queryKey: [["trpc"], ["articles", "list"]],
-        });
-        toast.info("Checking for new articles...");
-        refetchTimeoutRef.current = null;
-      }, 5000); // 5 second delay
-    } catch (error) {
-      // Error already handled by useCreateSubscription hook
-      throw error;
-    }
+    // Trigger server-side feed refresh to fetch articles from the new subscription
+    // This calls fetchAllFeeds on the server which fetches articles from RSS feeds
+    refreshFeeds.mutate();
+
+    // Delayed refetch of articles to show new articles smoothly
+    // Feed processing happens server-side and can take a few seconds
+    refetchTimeoutRef.current = setTimeout(() => {
+      queryClient.refetchQueries({
+        queryKey: [["trpc"], ["articles", "list"]],
+      });
+      toast.info("Checking for new articles...");
+      refetchTimeoutRef.current = null;
+    }, 5000); // 5 second delay
   };
 
   return {
