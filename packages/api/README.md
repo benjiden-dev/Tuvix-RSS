@@ -158,15 +158,74 @@ NODE_ENV=production BETTER_AUTH_SECRET=your-secret node dist/adapters/express.js
 
 #### Cloudflare Workers
 
+**Prerequisites:**
+- Cloudflare Workers Paid plan ($5/month) - Required for password hashing CPU limits
+- D1 database created: `wrangler d1 create tuvix`
+
+**Required Secrets:**
+
+```bash
+# Authentication (minimum 32 characters)
+wrangler secret put BETTER_AUTH_SECRET
+
+# First user auto-promotion to admin
+wrangler secret put ALLOW_FIRST_USER_ADMIN
+# Enter: true
+
+# Email service (Resend)
+wrangler secret put RESEND_API_KEY
+wrangler secret put EMAIL_FROM
+# Example: noreply@yourdomain.com
+
+# Application URLs
+wrangler secret put BASE_URL
+# Example: https://yourdomain.com
+wrangler secret put API_URL
+# Example: https://api.yourdomain.com
+wrangler secret put CORS_ORIGIN
+# Example: https://yourdomain.com
+wrangler secret put COOKIE_DOMAIN
+# Example: .yourdomain.com
+
+# Sentry (optional)
+wrangler secret put SENTRY_DSN
+wrangler secret put SENTRY_ENVIRONMENT
+# Example: production
+```
+
+**Database Setup:**
+
+```bash
+# 1. Create database
+wrangler d1 create tuvix
+
+# 2. Update GitHub secret (for CI/CD) or wrangler.toml.local (for local deployment)
+gh secret set D1_DATABASE_ID --body "<database-id-from-step-1>"
+
+# 3. Run migrations
+pnpm db:migrate:d1
+```
+
+**Deploy:**
+
 ```bash
 # Deploy to Workers
 pnpm deploy
 
-# Ensure wrangler.toml is configured with:
-# - D1 database binding
-# - BETTER_AUTH_SECRET secret (set via wrangler secret put)
-# - Cron trigger schedule
+# The deploy script automatically:
+# - Substitutes database_id from wrangler.toml.local or D1_DATABASE_ID env var
+# - Deploys with CPU limits configured (30 seconds)
+# - Applies cron trigger schedule (every 5 minutes)
 ```
+
+**First Admin User:**
+
+After deployment, the first user to sign up automatically becomes admin (when `ALLOW_FIRST_USER_ADMIN=true`):
+
+1. Navigate to `https://yourdomain.com/sign-up`
+2. Register with your email
+3. You'll be assigned user ID 1 and admin role automatically
+4. Email verification is **disabled by default** (can be enabled in settings)
 
 ## API Endpoints
 
