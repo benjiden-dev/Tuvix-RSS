@@ -1,0 +1,1 @@
+ALTER TABLE `global_settings` ADD `admin_bypass_email_verification` integer DEFAULT true NOT NULL;
