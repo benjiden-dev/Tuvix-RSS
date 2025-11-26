@@ -8,7 +8,7 @@
 import { createDatabase } from "@/db/client";
 import { fetchAllFeeds } from "@/services/rss-fetcher";
 import { getGlobalSettings } from "@/services/global-settings";
-import { inArray, lt, or, isNull, and, sql } from "drizzle-orm";
+import { inArray, lt, or, isNull, and } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import type { Env } from "@/types";
 import { D1_MAX_PARAMETERS, chunkArray } from "@/db/utils";

@@ -628,43 +628,28 @@ export const authRouter = router({
       }
 
       try {
-        // Better Auth doesn't expose sendVerificationEmail on server-side API
-        // We need to manually create a verification token and trigger the email callback
-        // Import crypto for token generation
-        const crypto = await import("crypto");
-        const token = crypto.randomBytes(32).toString("hex");
+        // Use Better Auth's official server-side API to send verification email
+        // This leverages the sendVerificationEmail callback configured in better-auth.ts
+        const auth = createAuth(ctx.env, ctx.db);
 
-        // Create verification token expiration (1 hour from now)
-        const expiresAt = new Date(Date.now() + 3600 * 1000);
+        // Get the frontend URL for the callback redirect
+        const frontendUrl = ctx.env.BASE_URL || "http://localhost:5173";
 
-        // Get the base URL for the verification link
-        const baseUrl = getBaseUrl(ctx.env, ctx.headers);
-        const verificationUrl = `${baseUrl}/api/auth/verify-email?token=${token}`;
-
-        // Store verification token in Better Auth's verification table
-        // Better Auth expects: identifier (email), value (token), expiresAt
-        const { verification } = await import("@/db/schema");
-        await ctx.db.insert(verification).values({
-          identifier: dbUser.email,
-          value: token,
-          expiresAt: expiresAt,
+        // Call Better Auth's server-side API
+        // This will create a verification token and trigger the sendVerificationEmail callback
+        // Better Auth API returns a plain object with { status: boolean }
+        const result = await auth.api.sendVerificationEmail({
+          body: {
+            email: dbUser.email,
+            callbackURL: `${frontendUrl}/app/articles`, // Redirect after verification
+          },
         });
 
-        // Import email service to send verification email
-        const { sendVerificationEmail } = await import("@/services/email");
-
-        // Send verification email using dedicated verification email template
-        const emailResult = await sendVerificationEmail(ctx.env, {
-          to: dbUser.email,
-          username: dbUser.username || dbUser.name || "User",
-          verificationToken: token,
-          verificationUrl: verificationUrl,
-        });
-
-        if (!emailResult.success) {
+        // Check if the operation was successful
+        if (!result.status) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",
-            message: emailResult.error || "Failed to send verification email",
+            message: "Failed to send verification email",
           });
         }
 
