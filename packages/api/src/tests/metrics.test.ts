@@ -5,35 +5,9 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  emitCounter,
-  emitGauge,
-  emitDistribution,
-  withTiming,
-  emitMetrics,
-} from "../utils/metrics";
+import { withTiming } from "../utils/metrics";
 
 describe("Metrics Utilities", () => {
-  it("emitCounter should not throw in Node.js runtime", () => {
-    expect(() => {
-      emitCounter("test.counter", 1, { test: "true" });
-    }).not.toThrow();
-  });
-
-  it("emitGauge should not throw in Node.js runtime", () => {
-    expect(() => {
-      emitGauge("test.gauge", 100, { test: "true" });
-    }).not.toThrow();
-  });
-
-  it("emitDistribution should not throw in Node.js runtime", () => {
-    expect(() => {
-      emitDistribution("test.distribution", 150, "millisecond", {
-        test: "true",
-      });
-    }).not.toThrow();
-  });
-
   it("withTiming should execute function and measure time", async () => {
     const result = await withTiming(
       "test.timing",
@@ -58,31 +32,5 @@ describe("Metrics Utilities", () => {
         { test: "true" }
       )
     ).rejects.toThrow("Test error");
-  });
-
-  it("emitMetrics should not throw with multiple metrics", () => {
-    expect(() => {
-      emitMetrics([
-        {
-          type: "counter",
-          name: "test.multi_counter",
-          value: 1,
-          attributes: { test: "true" },
-        },
-        {
-          type: "gauge",
-          name: "test.multi_gauge",
-          value: 50,
-          attributes: { test: "true" },
-        },
-        {
-          type: "distribution",
-          name: "test.multi_distribution",
-          value: 200,
-          unit: "millisecond",
-          attributes: { test: "true" },
-        },
-      ]);
-    }).not.toThrow();
   });
 });

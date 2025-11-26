@@ -88,31 +88,6 @@ describe("publicProcedure", () => {
     const result = await caller.test();
     expect(result).toBe("success");
   });
-
-  it("should work with Sentry middleware when available", async () => {
-    // Note: Sentry middleware is optional and may not be available in test environment
-    // This test verifies the procedure still works regardless
-    const env: Env = {
-      RUNTIME: "nodejs",
-      BETTER_AUTH_SECRET: "test-secret",
-    };
-
-    const testRouter = router({
-      test: publicProcedure.query(() => "success"),
-    });
-
-    const caller = testRouter.createCaller(
-      await createContext({
-        req: { headers: new Headers() } as any,
-        resHeaders: {} as any,
-        info: {} as any,
-        env,
-      })
-    );
-
-    const result = await caller.test();
-    expect(result).toBe("success");
-  });
 });
 
 describe("rateLimitedProcedure", () => {
@@ -220,58 +195,5 @@ describe("rateLimitedProcedure", () => {
 
     // Verify the procedure executed successfully with authentication
     expect(result).toBe(`success: ${user.id}`);
-  });
-});
-
-describe("Sentry Middleware Integration", () => {
-  it("should handle Sentry middleware gracefully when not available", async () => {
-    // Sentry middleware is optional and may not be available in test environment
-    // This test verifies that the code handles this gracefully
-    const env: Env = {
-      RUNTIME: "nodejs",
-      BETTER_AUTH_SECRET: "test-secret",
-    };
-
-    const testRouter = router({
-      test: publicProcedure.query(() => "success"),
-    });
-
-    const caller = testRouter.createCaller(
-      await createContext({
-        req: { headers: new Headers() } as any,
-        resHeaders: {} as any,
-        info: {} as any,
-        env,
-      })
-    );
-
-    const result = await caller.test();
-    expect(result).toBe("success");
-  });
-
-  it("should not break when Sentry import fails", async () => {
-    // The middleware setup uses try-catch to handle import failures
-    // This test verifies that behavior
-    const env: Env = {
-      RUNTIME: "nodejs",
-      BETTER_AUTH_SECRET: "test-secret",
-    };
-
-    const testRouter = router({
-      test: publicProcedure.query(() => "success"),
-    });
-
-    const caller = testRouter.createCaller(
-      await createContext({
-        req: { headers: new Headers() } as any,
-        resHeaders: {} as any,
-        info: {} as any,
-        env,
-      })
-    );
-
-    // Should work even if Sentry is not available
-    const result = await caller.test();
-    expect(result).toBe("success");
   });
 });

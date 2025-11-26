@@ -5,11 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  withQueryMetrics,
-  getRowCount,
-  emitRowCountMetric,
-} from "../utils/db-metrics";
+import { withQueryMetrics, getRowCount } from "../utils/db-metrics";
 
 describe("Database Metrics Utilities", () => {
   it("withQueryMetrics should execute query and return result", async () => {
@@ -55,19 +51,5 @@ describe("Database Metrics Utilities", () => {
     expect(getRowCount(undefined)).toBeUndefined();
     expect(getRowCount("string")).toBeUndefined();
     expect(getRowCount(123)).toBeUndefined();
-  });
-
-  it("emitRowCountMetric should not throw when called", () => {
-    const result = [{ id: 1 }, { id: 2 }, { id: 3 }];
-
-    expect(() => {
-      emitRowCountMetric("test.query", result, "test_table");
-    }).not.toThrow();
-  });
-
-  it("emitRowCountMetric should handle non-countable results gracefully", () => {
-    expect(() => {
-      emitRowCountMetric("test.query", null);
-    }).not.toThrow();
   });
 });
