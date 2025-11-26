@@ -99,6 +99,9 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
     secret: env.BETTER_AUTH_SECRET || "",
     baseURL: apiUrl,
     basePath: "/api/auth",
+    // CRITICAL: Trust the host header in production (required for Cloudflare Workers)
+    // This allows Better Auth to correctly set cookies when API and frontend are on different domains
+    trustHost: true,
     trustedOrigins: trustedOrigins.length > 0 ? trustedOrigins : undefined,
     telemetry: {
       enabled: false,

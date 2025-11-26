@@ -52,7 +52,9 @@ export function getSentryConfig(env: Env): Record<string, unknown> | null {
     dsn,
     environment,
     release,
-    tracesSampleRate: 0.1, // 10% sampling for performance tracing
+    // Set to 1.0 in development/staging for complete observability
+    // Lower in production to manage quota
+    tracesSampleRate: environment === "production" ? 0.1 : 1.0,
 
     // Enable Sentry Metrics (counters, gauges, distributions)
     enableMetrics: true,

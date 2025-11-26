@@ -30,7 +30,8 @@ describe("getSentryConfig", () => {
     expect(config).not.toBeNull();
     expect(config?.dsn).toBe("https://test@test.ingest.sentry.io/123");
     expect(config?.environment).toBe("development");
-    expect(config?.tracesSampleRate).toBe(0.1);
+    // Development environment uses 1.0 for complete observability
+    expect(config?.tracesSampleRate).toBe(1.0);
   });
 
   it("should use SENTRY_ENVIRONMENT when provided", () => {
@@ -43,6 +44,8 @@ describe("getSentryConfig", () => {
 
     const config = getSentryConfig(env);
     expect(config?.environment).toBe("production");
+    // Production environment uses 0.1 to manage quota
+    expect(config?.tracesSampleRate).toBe(0.1);
   });
 
   it("should fallback to NODE_ENV when SENTRY_ENVIRONMENT is not provided", () => {

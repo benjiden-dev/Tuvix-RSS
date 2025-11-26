@@ -243,9 +243,12 @@ export const useRegister = () => {
   const signUp = useMutation({
     mutationFn: (input: { email: string; password: string; name: string }) =>
       authClient.signUp.email(input),
-    onSuccess: async () => {
+    onSuccess: async (data) => {
       // Better Auth automatically updates session via HTTP-only cookies
       toast.success("Account created!");
+
+      // Log signup response for debugging
+      console.log("Sign-up response:", data);
 
       // Invalidate all queries to ensure fresh data (including session query)
       await queryClient.invalidateQueries();
@@ -256,6 +259,24 @@ export const useRegister = () => {
 
       if (!session?.data?.user) {
         console.error("Session not available after registration", session);
+
+        // Capture to Sentry - this is a critical error
+        Sentry.captureException(
+          new Error("Session not available after registration"),
+          {
+            tags: {
+              component: "register-hook",
+              operation: "post_signup_session_check",
+              flow: "registration",
+            },
+            extra: {
+              sessionData: session,
+              signupResponse: data,
+              cookies: document.cookie,
+            },
+            level: "error",
+          },
+        );
 
         // Clear any stale cookies
         try {

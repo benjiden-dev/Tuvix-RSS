@@ -73,10 +73,12 @@ if (dsn && typeof dsn === "string" && dsn.trim().length > 0) {
     ],
 
     // Performance tracing
-    tracesSampleRate: 0.1, // 10% sampling
+    // Set to 1.0 in development/staging, lower in production
+    tracesSampleRate: environment === "production" ? 0.1 : 1.0,
 
     // Session replay
-    replaysSessionSampleRate: 0.1, // 10% of sessions
+    // Capture ALL sessions in development/staging for debugging
+    replaysSessionSampleRate: environment === "production" ? 0.1 : 1.0,
     replaysOnErrorSampleRate: 1.0, // 100% of sessions with errors
 
     // Trace propagation for distributed tracing
