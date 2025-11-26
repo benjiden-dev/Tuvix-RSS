@@ -98,7 +98,75 @@ export const usernameValidator = z
   });
 
 /**
- * Email validator with length constraints
+ * Common disposable email domains
+ * From: https://github.com/disposable/disposable-email-domains
+ * Updated: 2025-01-25
+ */
+const DISPOSABLE_EMAIL_DOMAINS = [
+  // Popular temporary email services
+  "tempmail.com",
+  "guerrillamail.com",
+  "mailinator.com",
+  "10minutemail.com",
+  "throwaway.email",
+  "temp-mail.org",
+  "fakeinbox.com",
+  "yopmail.com",
+  "maildrop.cc",
+  "trashmail.com",
+  "getnada.com",
+  "mohmal.com",
+  "sharklasers.com",
+  "grr.la",
+  "guerrillamail.org",
+  "spam4.me",
+  "mailnesia.com",
+  "emailondeck.com",
+  "mintemail.com",
+  "mytemp.email",
+  // Add more as needed
+] as const;
+
+/**
+ * Common email typos and their corrections
+ */
+const EMAIL_TYPOS: Record<string, string> = {
+  // Gmail typos
+  "gmial.com": "gmail.com",
+  "gmai.com": "gmail.com",
+  "gmil.com": "gmail.com",
+  "gamil.com": "gmail.com",
+  "gnail.com": "gmail.com",
+  "gmailc.om": "gmail.com",
+  "gmaul.com": "gmail.com",
+
+  // Yahoo typos
+  "yahooo.com": "yahoo.com",
+  "yaho.com": "yahoo.com",
+  "yahou.com": "yahoo.com",
+  "yhoo.com": "yahoo.com",
+
+  // Outlook/Hotmail typos
+  "hotmial.com": "hotmail.com",
+  "hotmil.com": "hotmail.com",
+  "outlok.com": "outlook.com",
+  "outloo.com": "outlook.com",
+
+  // Other common providers
+  "icloud.co": "icloud.com",
+  "protonmai.com": "protonmail.com",
+  "hey.co": "hey.com",
+} as const;
+
+/**
+ * Email validator with length constraints and enhanced validation
+ *
+ * Features:
+ * - Format validation
+ * - Length constraints (3-255 chars per RFC)
+ * - Disposable email blocking
+ * - Typo detection with suggestions
+ * - Domain normalization (lowercase)
  */
 export const emailValidator = z
   .string()
@@ -106,6 +174,36 @@ export const emailValidator = z
   .min(STRING_LIMITS.EMAIL.min)
   .max(STRING_LIMITS.EMAIL.max, {
     message: `Email must not exceed ${STRING_LIMITS.EMAIL.max} characters`,
+  })
+  .refine(
+    (email) => {
+      const domain = email.split("@")[1]?.toLowerCase();
+      if (!domain) return false;
+
+      // Block disposable email domains
+      return !DISPOSABLE_EMAIL_DOMAINS.includes(
+        domain as (typeof DISPOSABLE_EMAIL_DOMAINS)[number]
+      );
+    },
+    {
+      message:
+        "Disposable email addresses are not allowed. Please use a permanent email address.",
+    }
+  )
+  .transform((email) => {
+    const [localPart, domain] = email.split("@");
+    const lowerDomain = domain.toLowerCase();
+
+    // Check for common typos
+    if (lowerDomain in EMAIL_TYPOS) {
+      const suggestedDomain = EMAIL_TYPOS[lowerDomain];
+      throw new Error(
+        `Did you mean ${localPart}@${suggestedDomain}? (You entered ${localPart}@${lowerDomain})`
+      );
+    }
+
+    // Return normalized email (lowercase domain)
+    return `${localPart}@${lowerDomain}`;
   });
 
 /**

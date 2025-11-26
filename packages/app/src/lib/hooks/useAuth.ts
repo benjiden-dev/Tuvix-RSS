@@ -201,7 +201,24 @@ export const useLogin = () => {
 
       if (!session?.data?.user) {
         console.error("Session not available after login", session);
-        toast.error("Session not available. Please try again.");
+
+        // Clear any stale cookies
+        try {
+          await authClient.signOut();
+        } catch (error) {
+          // Ignore signout errors - session is already broken
+          console.warn("Failed to sign out broken session:", error);
+        }
+
+        // Show helpful error message with recovery instructions
+        toast.error("Session error. Please try logging in again.", {
+          description:
+            "If this persists, clear your browser cookies and try again.",
+          duration: 5000,
+        });
+
+        // Redirect to login page for clean retry
+        await router.navigate({ to: "/" });
         return;
       }
 
@@ -238,7 +255,24 @@ export const useRegister = () => {
 
       if (!session?.data?.user) {
         console.error("Session not available after registration", session);
-        toast.error("Session not available. Please try again.");
+
+        // Clear any stale cookies
+        try {
+          await authClient.signOut();
+        } catch (error) {
+          // Ignore signout errors - session is already broken
+          console.warn("Failed to sign out broken session:", error);
+        }
+
+        // Show helpful error message with recovery instructions
+        toast.error("Session error. Please try registering again.", {
+          description:
+            "If this persists, clear your browser cookies and try again.",
+          duration: 5000,
+        });
+
+        // Redirect to register page for clean retry
+        await router.navigate({ to: "/register" });
         return;
       }
 
