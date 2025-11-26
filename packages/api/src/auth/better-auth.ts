@@ -293,7 +293,7 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
     },
     // Email verification configuration
     emailVerification: {
-      sendVerificationEmail: async ({ user, url, token }, request) => {
+      sendVerificationEmail: async ({ user, url, token }, _request) => {
         // Wrap entire email verification flow in Sentry span
         return await Sentry.startSpan(
           {
@@ -371,16 +371,15 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
                 });
               });
 
-            // For Cloudflare Workers: Use waitUntil to ensure email sends without blocking
-            // For Node.js: This property won't exist, fire-and-forget is acceptable
-            const requestWithWaitUntil = request as {
-              waitUntil?: (promise: Promise<unknown>) => void;
-            };
-            if (requestWithWaitUntil && requestWithWaitUntil.waitUntil) {
-              requestWithWaitUntil.waitUntil(emailPromise);
+            // Since request.waitUntil is not available from Better Auth,
+            // we must await the promise to ensure the email actually sends
+            try {
+              await emailPromise;
+            } catch (error) {
+              // Error already logged by promise catch handler and Sentry
+              console.error("Verification email send failed:", error);
             }
 
-            // Return immediately to avoid blocking signup
             return;
           }
         );
