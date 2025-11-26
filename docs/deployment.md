@@ -544,6 +544,10 @@ cd packages/api
 npx wrangler secret put BETTER_AUTH_SECRET
 # Generate with: openssl rand -base64 32
 
+# First user auto-promotion to admin (REQUIRED for first deployment)
+npx wrangler secret put ALLOW_FIRST_USER_ADMIN
+# Enter: true
+
 # CORS origin (frontend URL) - Set BEFORE deploying API
 npx wrangler secret put CORS_ORIGIN
 # Enter: https://feed.example.com (if using custom domain)
@@ -558,24 +562,6 @@ npx wrangler secret put BASE_URL
 # Or: https://your-worker.workers.dev (if using Workers default domain)
 # Example: https://api.tuvix.app
 ```
-
-**Required for First Deployment:**
-
-⚠️ **IMPORTANT**: These secrets MUST be set before calling the `/_admin/init` endpoint in Step 6. Without these, admin initialization will fail.
-
-```bash
-# Admin initialization (REQUIRED for first deployment only)
-npx wrangler secret put ADMIN_USERNAME
-# Enter: admin (or your preferred admin username)
-
-npx wrangler secret put ADMIN_EMAIL
-# Enter: admin@example.com (use a real email address)
-
-npx wrangler secret put ADMIN_PASSWORD
-# Enter: YourSecurePassword123! (use a strong password)
-```
-
-**Security Note**: After successfully creating the admin user, change the password immediately through the admin UI. The password set here is temporary and should not be used long-term.
 
 **Optional Secrets:**
 
@@ -641,68 +627,55 @@ npx wrangler tail
 
 #### Step 6: Initialize Admin User (First Deployment)
 
-**Prerequisites**: Ensure admin secrets are set in Step 3 (`ADMIN_USERNAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`). Without these, initialization will fail.
+**⚠️ IMPORTANT: Cloudflare Workers Paid Plan Required**
 
-After first deployment:
+Cloudflare Workers **free tier does not support password authentication** due to CPU time limits:
+- **Free tier**: 10ms CPU limit
+- **Password hashing (scrypt)**: Requires 3-4 seconds of CPU time
+- **Paid tier** ($5/month): 30 seconds CPU limit (required)
 
-```bash
-# Trigger admin initialization
-curl -X POST https://your-worker.workers.dev/_admin/init
+See [GitHub Issue #969](https://github.com/better-auth/better-auth/issues/969) for details.
 
-# Or if using custom domain:
-curl -X POST https://api.example.com/_admin/init
-```
+**Prerequisites:**
+1. ✅ Cloudflare Workers Paid plan active ($5/month)
+2. ✅ `ALLOW_FIRST_USER_ADMIN` secret set to `"true"` (Step 3)
+3. ✅ Email service configured (optional but recommended)
+4. ✅ CPU limits configured in `wrangler.toml` (already set to 30 seconds)
 
-**Example:**
-```bash
-curl -X POST https://api.tuvix.app/_admin/init
-```
+**Admin User Creation:**
 
-**Expected Responses:**
+The **first user to sign up** automatically becomes admin:
 
-**Success (201 Created):**
-```json
-{
-  "created": true,
-  "message": "Admin user 'admin' created successfully. CHANGE PASSWORD IMMEDIATELY!"
-}
-```
+1. Navigate to your frontend URL (e.g., `https://feed.example.com/sign-up`)
+2. Sign up with your email and password
+3. You'll be assigned user ID 1 and admin role automatically
+4. **Email verification is disabled by default** - you can log in immediately
 
-**Already Exists (200 OK):**
-```json
-{
-  "created": false,
-  "message": "Admin user already exists"
-}
-```
-
-**Missing Credentials (200 OK):**
-```json
-{
-  "created": false,
-  "message": "Admin credentials not provided in environment variables"
-}
-```
+**Why this approach:**
+- ✅ No manual database manipulation needed
+- ✅ Uses Better Auth's standard signup flow
+- ✅ Automatic role assignment via `ALLOW_FIRST_USER_ADMIN` logic
+- ✅ Works with all authentication methods (email, username)
 
 **Verify Admin User Created:**
 
-After successful initialization, verify the admin user exists:
-
 ```bash
-# Check if admin user exists in database
+# Check if admin user exists
 npx wrangler d1 execute tuvix --remote \
-  --command "SELECT id, email, username, role FROM user WHERE role = 'admin';"
+  --command "SELECT id, email, email_verified, role FROM user WHERE id = 1;"
+
+# Expected output:
+# id: 1
+# email: your@email.com
+# email_verified: 1
+# role: admin
 ```
 
-**Note**: 
-- Admin initialization creates a user in Better Auth's `user` table with admin role and admin plan
-- You can then log in using Better Auth's `/api/auth/sign-in/username` or `/api/auth/sign-in/email` endpoint
-- **This step only needs to be done once** - subsequent deployments do not require re-initialization
-- After first login, change the password immediately through the admin UI
-
-**Troubleshooting**: See "Admin Initialization Failed" in the [Common Issues](#common-issues-1) section below.
-
-**Troubleshooting**: See "Admin Initialization Failed" in the [Common Issues](#common-issues-1) section below.
+**Configuration Notes:**
+- Email verification is **disabled by default** (can be enabled in admin settings)
+- First user automatically gets admin role and free plan
+- Subsequent users get user role and must be promoted by admin
+- Admin can enable email verification requirement in settings after initial setup
 
 ### Frontend Setup (Cloudflare Pages)
 
@@ -1043,14 +1016,12 @@ curl -X POST https://api.example.com/_admin/init
 | Secret | Required | Description |
 |--------|----------|-------------|
 | `BETTER_AUTH_SECRET` | Yes | Secret for Better Auth session management (min 32 chars) |
+| `ALLOW_FIRST_USER_ADMIN` | Yes | Enable first user auto-promotion to admin (set to `"true"`) |
 | `CORS_ORIGIN` | Yes | Allowed CORS origins (comma-separated) |
 | `BASE_URL` | Yes | Base URL for Better Auth (production API URL, NOT localhost). Used for callback URLs and session management. |
 | `RESEND_API_KEY` | No | Resend API key for email service (see [Email System Guide](developer/email-system.md)) |
 | `EMAIL_FROM` | No | Email sender address (must match verified domain in Resend) |
 | `COOKIE_DOMAIN` | No | Root domain for cross-subdomain cookies (e.g., "example.com") |
-| `ADMIN_USERNAME` | No | Admin username for initialization |
-| `ADMIN_PASSWORD` | No | Admin password for initialization |
-| `ADMIN_EMAIL` | No | Admin email for initialization |
 
 **⚠️ Security Note**: Never commit secrets to `wrangler.toml`. Use `wrangler secret put` for all sensitive values. The `wrangler.toml` file with empty IDs is safe to commit as a template.
 
