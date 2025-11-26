@@ -293,7 +293,7 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
     },
     // Email verification configuration
     emailVerification: {
-      sendVerificationEmail: async ({ user, url, token }, _request) => {
+      sendVerificationEmail: async ({ user, token }, _request) => {
         // Fire-and-forget email verification to avoid CPU timeout
         // Better Auth callbacks don't provide access to waitUntil()
         // If email fails to send, user can request a new one via resendVerificationEmail
@@ -307,6 +307,10 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
 
             const userWithPlugins = user as BetterAuthUser;
 
+            // Create frontend verification URL instead of using backend URL
+            // This ensures proper logo loading and post-verification redirect
+            const frontendVerificationUrl = `${frontendUrl}/verify-email?token=${token}`;
+
             // Send verification email (fire-and-forget)
             sendVerificationEmail(env, {
               to: user.email,
@@ -315,7 +319,7 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
                 user.name ||
                 "User",
               verificationToken: token,
-              verificationUrl: url,
+              verificationUrl: frontendVerificationUrl, // Frontend URL instead of backend URL
             }).catch((error) => {
               // Log critical email failures to Sentry
               Sentry.captureException(error, {
@@ -339,7 +343,10 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
             });
           })
           .catch((error) => {
-            console.error("Failed to check email verification settings:", error);
+            console.error(
+              "Failed to check email verification settings:",
+              error
+            );
           });
 
         // Return immediately without awaiting
@@ -444,14 +451,19 @@ export function createAuth(env: Env, db?: ReturnType<typeof createDatabase>) {
                       `Failed to send welcome email to ${user.email}:`,
                       {
                         error:
-                          error instanceof Error ? error.message : String(error),
+                          error instanceof Error
+                            ? error.message
+                            : String(error),
                       }
                     );
                   });
                 }
               })
               .catch((error) => {
-                console.error(`Error checking welcome email requirements:`, error);
+                console.error(
+                  `Error checking welcome email requirements:`,
+                  error
+                );
               });
           }
         }
