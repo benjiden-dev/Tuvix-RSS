@@ -279,7 +279,7 @@ describe("AudioPlayer with Progress", () => {
     expect(playButton).not.toHaveClass("text-primary");
   });
 
-  it("should pass audioProgress as undefined when not provided", () => {
+  it("should pass audioProgress as null when not provided", () => {
     render(
       <AudioPlayer
         audioUrl="https://example.com/audio.mp3"
@@ -291,7 +291,7 @@ describe("AudioPlayer with Progress", () => {
     expect(useAudioProgressModule.useAudioProgressRestore).toHaveBeenCalledWith(
       1,
       "https://example.com/audio.mp3",
-      undefined,
+      null,
     );
   });
 

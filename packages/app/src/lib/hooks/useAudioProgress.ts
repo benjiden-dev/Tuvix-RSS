@@ -1,6 +1,7 @@
 import { trpc } from "../api/trpc";
 import { useCallback, useEffect, useRef } from "react";
 import { useAudio } from "@/contexts/audio-context";
+import * as Sentry from "@sentry/react";
 
 // Throttle delay for progress updates (10 seconds)
 const PROGRESS_UPDATE_INTERVAL = 10_000;
@@ -13,7 +14,35 @@ const MIN_PROGRESS_CHANGE = 5;
  */
 export function useAudioProgressSync(articleId: number) {
   const { currentAudioId, currentTime, duration, isPlaying } = useAudio();
-  const updateMutation = trpc.articles.updateAudioProgress.useMutation();
+  const updateMutation = trpc.articles.updateAudioProgress.useMutation({
+    onError: (error) => {
+      Sentry.captureException(error, {
+        level: "error",
+        tags: {
+          component: "audio-progress",
+          operation: "update",
+          articleId: articleId.toString(),
+        },
+        extra: {
+          currentTime,
+          duration,
+          isPlaying,
+        },
+      });
+    },
+    onSuccess: (data, variables) => {
+      Sentry.addBreadcrumb({
+        category: "audio",
+        message: "Audio progress saved",
+        level: "info",
+        data: {
+          articleId: variables.articleId,
+          position: variables.position,
+          duration: variables.duration,
+        },
+      });
+    },
+  });
 
   const lastSavedTime = useRef(0);
   const lastUpdateTime = useRef(0);
@@ -38,12 +67,25 @@ export function useAudioProgressSync(articleId: number) {
     lastUpdateTime.current = now;
     lastSavedTime.current = currentTime;
 
-    // Save progress
-    updateMutation.mutate({
-      articleId,
-      position: Math.floor(currentTime),
-      duration: duration > 0 ? Math.floor(duration) : undefined,
-    });
+    // Save progress with performance tracking
+    Sentry.startSpan(
+      {
+        op: "audio.progress.update",
+        name: "Update Audio Progress",
+        attributes: {
+          articleId,
+          position: Math.floor(currentTime),
+          duration: duration > 0 ? Math.floor(duration) : 0,
+        },
+      },
+      () => {
+        updateMutation.mutate({
+          articleId,
+          position: Math.floor(currentTime),
+          duration: duration > 0 ? Math.floor(duration) : undefined,
+        });
+      },
+    );
   }, [
     isCurrentAudio,
     currentTime,
@@ -60,6 +102,14 @@ export function useAudioProgressSync(articleId: number) {
       const timeSinceLastSave = Math.abs(currentTime - lastSavedTime.current);
       if (timeSinceLastSave >= MIN_PROGRESS_CHANGE) {
         lastSavedTime.current = currentTime;
+
+        Sentry.addBreadcrumb({
+          category: "audio",
+          message: "Saving progress on pause",
+          level: "info",
+          data: { position: Math.floor(currentTime) },
+        });
+
         updateMutation.mutate({
           articleId,
           position: Math.floor(currentTime),
@@ -89,7 +139,14 @@ export function useAudioProgressRestore(
   const hasRestored = useRef(false);
 
   const play = useCallback(() => {
-    if (!audioUrl) return;
+    if (!audioUrl) {
+      Sentry.captureMessage("Cannot play: audio URL is null", {
+        level: "warning",
+        tags: { component: "audio-progress", operation: "restore" },
+        extra: { articleId },
+      });
+      return;
+    }
 
     // Restore progress on first play
     const startPosition =
@@ -99,10 +156,35 @@ export function useAudioProgressRestore(
         ? audioProgress.position
         : undefined;
 
-    playAudio(articleId, audioUrl, startPosition);
-
     if (startPosition !== undefined) {
-      hasRestored.current = true;
+      Sentry.addBreadcrumb({
+        category: "audio",
+        message: "Restoring audio progress on play",
+        level: "info",
+        data: {
+          articleId,
+          startPosition,
+          totalDuration: audioProgress?.duration,
+        },
+      });
+    }
+
+    try {
+      playAudio(articleId, audioUrl, startPosition);
+
+      if (startPosition !== undefined) {
+        hasRestored.current = true;
+      }
+    } catch (error) {
+      Sentry.captureException(error, {
+        level: "error",
+        tags: { component: "audio-progress", operation: "restore-play" },
+        extra: {
+          articleId,
+          audioUrl,
+          startPosition,
+        },
+      });
     }
   }, [articleId, audioUrl, audioProgress, playAudio]);
 
@@ -123,8 +205,24 @@ export function useMarkAudioCompleted() {
   const utils = trpc.useUtils();
 
   return trpc.articles.markAudioCompleted.useMutation({
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      Sentry.addBreadcrumb({
+        category: "audio",
+        message: "Marked audio as completed",
+        level: "info",
+        data: { articleId: variables.articleId },
+      });
       utils.articles.list.invalidate();
+    },
+    onError: (error, variables) => {
+      Sentry.captureException(error, {
+        level: "error",
+        tags: {
+          component: "audio-progress",
+          operation: "mark-completed",
+          articleId: variables.articleId.toString(),
+        },
+      });
     },
   });
 }
@@ -136,8 +234,24 @@ export function useClearAudioProgress() {
   const utils = trpc.useUtils();
 
   return trpc.articles.clearAudioProgress.useMutation({
-    onSuccess: () => {
+    onSuccess: (data, variables) => {
+      Sentry.addBreadcrumb({
+        category: "audio",
+        message: "Cleared audio progress",
+        level: "info",
+        data: { articleId: variables.articleId },
+      });
       utils.articles.list.invalidate();
+    },
+    onError: (error, variables) => {
+      Sentry.captureException(error, {
+        level: "error",
+        tags: {
+          component: "audio-progress",
+          operation: "clear-progress",
+          articleId: variables.articleId.toString(),
+        },
+      });
     },
   });
 }
