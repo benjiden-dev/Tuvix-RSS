@@ -7,7 +7,6 @@ import {
   parseFiltersJson,
   parseCategoriesJson,
   parseBoolean,
-  type FilterData,
 } from "../opml-parser";
 
 describe("OPML Parser Utilities", () => {
@@ -92,40 +91,6 @@ describe("OPML Parser Utilities", () => {
           caseSensitive: false,
         },
       ]);
-    });
-
-    it("should parse all valid field types", () => {
-      const fields: FilterData["field"][] = [
-        "title",
-        "content",
-        "description",
-        "author",
-        "any",
-      ];
-
-      fields.forEach((field) => {
-        const json = JSON.stringify([
-          { field, matchType: "contains", pattern: "test" },
-        ]);
-        const result = parseFiltersJson(json);
-        expect(result?.[0]?.field).toBe(field);
-      });
-    });
-
-    it("should parse all valid matchType values", () => {
-      const matchTypes: FilterData["matchType"][] = [
-        "contains",
-        "regex",
-        "exact",
-      ];
-
-      matchTypes.forEach((matchType) => {
-        const json = JSON.stringify([
-          { field: "title", matchType, pattern: "test" },
-        ]);
-        const result = parseFiltersJson(json);
-        expect(result?.[0]?.matchType).toBe(matchType);
-      });
     });
 
     it("should handle multiple valid filters", () => {

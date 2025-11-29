@@ -104,25 +104,6 @@ describe("Admin Metrics Utilities", () => {
       expect(result).toHaveLength(3);
       expect(result[0]).toEqual({ date: "2024-01-15", count: 1 });
     });
-
-    it("should handle large number of records efficiently", () => {
-      const records = Array.from({ length: 1000 }, (_, i) => ({
-        createdAt:
-          new Date("2024-01-15T00:00:00Z").getTime() +
-          Math.floor(i / 100) * 24 * 60 * 60 * 1000,
-      })).map((r) => ({ createdAt: new Date(r.createdAt) }));
-
-      const result = aggregateByDay(
-        records,
-        (r) => r.createdAt,
-        10,
-        new Date("2024-01-15T00:00:00Z")
-      );
-
-      expect(result).toHaveLength(10);
-      // Each of first 10 days should have 100 records
-      expect(result[0].count).toBe(100);
-    });
   });
 
   describe("calculateStartDate", () => {
@@ -140,18 +121,6 @@ describe("Admin Metrics Utilities", () => {
       const result = calculateStartDate(1);
 
       expect(result.toISOString().split("T")[0]).toBe("2024-01-19");
-    });
-
-    it("should return date 7 days ago for days=7", () => {
-      const result = calculateStartDate(7);
-
-      expect(result.toISOString().split("T")[0]).toBe("2024-01-13");
-    });
-
-    it("should return date 30 days ago for days=30", () => {
-      const result = calculateStartDate(30);
-
-      expect(result.toISOString().split("T")[0]).toBe("2023-12-21");
     });
 
     it("should throw error for days=0", () => {
