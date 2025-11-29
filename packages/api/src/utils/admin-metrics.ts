@@ -41,8 +41,7 @@ export function aggregateByDay<T>(
   // Fill in missing days
   const data: TimeSeriesDataPoint[] = [];
   for (let i = 0; i < days; i++) {
-    const date = new Date(startDate);
-    date.setDate(date.getDate() + i);
+    const date = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
     const dateStr = date.toISOString().split("T")[0];
     data.push({
       date: dateStr,
