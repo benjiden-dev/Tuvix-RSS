@@ -4,6 +4,14 @@
 
 Tuvix is a modern RSS aggregator that helps you follow all your favorite blogs, podcasts, and news sources in one place. It's not a social network, it's not an algorithmic feed, it's just old-fashioned RSS.
 
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/821477bc-ba80-466d-b6da-ab5932c5008f" width="400" />
+</div>
+
+
+
+
+
 ## Hosted
 
 Head over to **[tuvix.app](https://tuvix.app)** to create your free account and start reading!
