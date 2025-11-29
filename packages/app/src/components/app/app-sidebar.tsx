@@ -52,7 +52,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { data: subscriptionsData } = useSubscriptions();
   const { data: sessionData, isPending: isUserLoading } = useCurrentUser();
   const location = useLocation();
-  const { state, setOpen } = useSidebar();
+  const { state, setOpen, isMobile, setOpenMobile } = useSidebar();
   // Better Auth's useSession() returns {data: {user, session}, ...}
   const user = sessionData?.user as User | undefined;
 
@@ -62,12 +62,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     categories: "categories",
   });
 
-  // Helper function to open sidebar if collapsed
-  const ensureSidebarOpen = React.useCallback(() => {
-    if (state === "collapsed") {
+  // Helper function to handle link clicks - close sidebar on mobile, open on desktop if collapsed
+  const handleLinkClick = React.useCallback(() => {
+    if (isMobile) {
+      setOpenMobile(false);
+    } else if (state === "collapsed") {
       setOpen(true);
     }
-  }, [state, setOpen]);
+  }, [isMobile, state, setOpen, setOpenMobile]);
 
   // Prevents accordion toggle when sidebar is collapsed - only opens sidebar
   const handleAccordionTriggerClick = React.useCallback(
@@ -127,7 +129,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <Link
           to="/app"
           className="flex items-center gap-2 px-2 py-1 hover:no-underline group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
-          onClick={ensureSidebarOpen}
+          onClick={handleLinkClick}
         >
           <div className="bg-primary text-primary-foreground flex h-8 w-8 shrink-0 items-center justify-center rounded-md">
             <TuvixLogo className="size-5" />
@@ -151,7 +153,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       category_id: undefined,
                       subscription_id: undefined,
                     }}
-                    onClick={ensureSidebarOpen}
+                    onClick={handleLinkClick}
                   >
                     <Newspaper />
                     <span>Articles</span>
@@ -194,7 +196,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                                 category_id: undefined,
                                 subscription_id: undefined,
                               }}
-                              onClick={ensureSidebarOpen}
+                              onClick={handleLinkClick}
                             >
                               <span>All Subscriptions</span>
                             </Link>
@@ -233,7 +235,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                                             subscription_id: sub.id,
                                           }
                                     }
-                                    onClick={ensureSidebarOpen}
+                                    onClick={handleLinkClick}
                                   >
                                     <FeedAvatar
                                       feedName={subscriptionTitle}
@@ -257,7 +259,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                           <SidebarMenuSubButton asChild>
                             <Link
                               to="/app/subscriptions"
-                              onClick={ensureSidebarOpen}
+                              search={{ subscribe: undefined }}
+                              onClick={handleLinkClick}
                             >
                               <span className="font-semibold">View All →</span>
                             </Link>
@@ -307,7 +310,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                               category_id: category.id,
                               subscription_id: undefined,
                             }}
-                            onClick={ensureSidebarOpen}
+                            onClick={handleLinkClick}
                           >
                             <CategoryBadge
                               category={category}
@@ -320,7 +323,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                     ))}
                     <SidebarMenuSubItem>
                       <SidebarMenuSubButton asChild>
-                        <Link to="/app/categories" onClick={ensureSidebarOpen}>
+                        <Link to="/app/categories" onClick={handleLinkClick}>
                           <span className="font-semibold">View All →</span>
                         </Link>
                       </SidebarMenuSubButton>
@@ -339,7 +342,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <Link to="/app/feeds" onClick={ensureSidebarOpen}>
+                  <Link to="/app/feeds" onClick={handleLinkClick}>
                     <Rss />
                     <span>Public Feeds</span>
                   </Link>
@@ -347,7 +350,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
-                  <Link to="/app/settings" onClick={ensureSidebarOpen}>
+                  <Link to="/app/settings" onClick={handleLinkClick}>
                     <Settings2 />
                     <span>Settings</span>
                   </Link>
@@ -365,7 +368,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>
-                    <Link to="/app/admin" onClick={ensureSidebarOpen}>
+                    <Link to="/app/admin" onClick={handleLinkClick}>
                       <Shield />
                       <span>Dashboard</span>
                     </Link>
@@ -375,7 +378,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   <SidebarMenuButton asChild>
                     <Link
                       to="/app/admin/blocked-domains"
-                      onClick={ensureSidebarOpen}
+                      onClick={handleLinkClick}
                     >
                       <Shield />
                       <span>Moderation</span>
@@ -384,7 +387,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>
-                    <Link to="/app/admin/users" onClick={ensureSidebarOpen}>
+                    <Link to="/app/admin/users" onClick={handleLinkClick}>
                       <Users />
                       <span>Users</span>
                     </Link>
@@ -392,7 +395,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>
-                    <Link to="/app/admin/plans" onClick={ensureSidebarOpen}>
+                    <Link to="/app/admin/plans" onClick={handleLinkClick}>
                       <CreditCard />
                       <span>Plans</span>
                     </Link>
@@ -400,7 +403,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </SidebarMenuItem>
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild>
-                    <Link to="/app/admin/settings" onClick={ensureSidebarOpen}>
+                    <Link to="/app/admin/settings" onClick={handleLinkClick}>
                       <Settings2 />
                       <span>Admin Settings</span>
                     </Link>
