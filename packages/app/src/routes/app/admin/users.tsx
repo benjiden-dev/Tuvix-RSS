@@ -29,23 +29,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/animate-ui/components/radix/dropdown-menu";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/animate-ui/components/radix/alert-dialog";
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/animate-ui/components/radix/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFooter,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -410,16 +410,16 @@ function AdminUsers() {
       </Card>
 
       {/* Ban/Unban Dialog */}
-      <AlertDialog
+      <ResponsiveAlertDialog
         open={banUserId !== null}
         onOpenChange={() => setBanUserId(null)}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>
               {userToBan?.banned ? "Unban" : "Ban"} User
-            </AlertDialogTitle>
-            <AlertDialogDescription>
+            </ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
               Are you sure you want to {userToBan?.banned ? "unban" : "ban"}{" "}
               <strong>{userToBan?.username}</strong>?
               {!userToBan?.banned && (
@@ -427,11 +427,11 @@ function AdminUsers() {
                   This will prevent the user from accessing their account.
                 </span>
               )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel>Cancel</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction
               onClick={() =>
                 banUserId && handleBan(banUserId, !userToBan?.banned)
               }
@@ -442,48 +442,48 @@ function AdminUsers() {
                 : userToBan?.banned
                   ? "Unban"
                   : "Ban"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
 
       {/* Delete Dialog */}
-      <AlertDialog
+      <ResponsiveAlertDialog
         open={deleteUserId !== null}
         onOpenChange={() => setDeleteUserId(null)}
       >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete User</AlertDialogTitle>
-            <AlertDialogDescription>
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>Delete User</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
               Are you sure you want to delete{" "}
               <strong>{userToDelete?.username}</strong>? This action cannot be
               undone. All user data including subscriptions, feeds, and articles
               will be permanently deleted.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel>Cancel</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction
               onClick={() => deleteUserId && handleDelete(deleteUserId)}
               disabled={deleteMutation.isPending}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {deleteMutation.isPending ? "Deleting..." : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
 
       {/* Change Plan Dialog */}
-      <Dialog
+      <ResponsiveDialog
         open={changePlanUserId !== null}
         onOpenChange={() => setChangePlanUserId(null)}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Change User Plan</DialogTitle>
-            <DialogDescription>
+        <ResponsiveDialogContent>
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>Change User Plan</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>
               Update the plan for{" "}
               <strong>
                 {
@@ -491,8 +491,8 @@ function AdminUsers() {
                     ?.username
                 }
               </strong>
-            </DialogDescription>
-          </DialogHeader>
+            </ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="plan">Select Plan</Label>
@@ -509,7 +509,7 @@ function AdminUsers() {
               </Select>
             </div>
           </div>
-          <DialogFooter>
+          <ResponsiveDialogFooter>
             <Button variant="outline" onClick={() => setChangePlanUserId(null)}>
               Cancel
             </Button>
@@ -519,19 +519,19 @@ function AdminUsers() {
             >
               {changePlanMutation.isPending ? "Updating..." : "Update Plan"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
 
       {/* Custom Limits Dialog */}
-      <Dialog
+      <ResponsiveDialog
         open={customLimitsUserId !== null}
         onOpenChange={() => setCustomLimitsUserId(null)}
       >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Set Custom Limits</DialogTitle>
-            <DialogDescription>
+        <ResponsiveDialogContent className="max-w-md">
+          <ResponsiveDialogHeader>
+            <ResponsiveDialogTitle>Set Custom Limits</ResponsiveDialogTitle>
+            <ResponsiveDialogDescription>
               Override plan limits for{" "}
               <strong>
                 {
@@ -541,8 +541,8 @@ function AdminUsers() {
                 }
               </strong>
               . Leave empty to use plan defaults.
-            </DialogDescription>
-          </DialogHeader>
+            </ResponsiveDialogDescription>
+          </ResponsiveDialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="maxSources">Max Sources</Label>
@@ -592,7 +592,7 @@ function AdminUsers() {
               />
             </div>
           </div>
-          <DialogFooter>
+          <ResponsiveDialogFooter>
             <Button
               variant="outline"
               onClick={() => setCustomLimitsUserId(null)}
@@ -605,9 +605,9 @@ function AdminUsers() {
             >
               {customLimitsMutation.isPending ? "Saving..." : "Save Limits"}
             </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </ResponsiveDialogFooter>
+        </ResponsiveDialogContent>
+      </ResponsiveDialog>
     </div>
   );
 }
