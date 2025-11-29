@@ -52,6 +52,12 @@ import {
 import { fetchAndDiscoverCategories } from "@/services/category-discovery";
 import { stripHtml } from "@/utils/text-sanitizer";
 import { discoverFavicon } from "@/services/favicon-fetcher";
+import {
+  parseFiltersJson,
+  parseCategoriesJson,
+  parseBoolean,
+  type FilterData,
+} from "@/utils/opml-parser";
 
 /**
  * Extract iTunes image URL from feed metadata
@@ -1285,94 +1291,12 @@ export const subscriptionsRouter = router({
         });
       }
 
-      // Helper to parse filters JSON
-      const parseFiltersJson = (
-        jsonString: string | undefined
-      ): Array<{
-        field: "title" | "content" | "description" | "author" | "any";
-        matchType: "contains" | "regex" | "exact";
-        pattern: string;
-        caseSensitive: boolean;
-      }> | null => {
-        if (!jsonString) return null;
-        try {
-          const parsed = JSON.parse(jsonString) as unknown;
-          if (!Array.isArray(parsed)) return null;
-          // Validate structure and normalize filters (caseSensitive defaults to false)
-          return parsed
-            .filter(
-              (
-                f
-              ): f is {
-                field: "title" | "content" | "description" | "author" | "any";
-                matchType: "contains" | "regex" | "exact";
-                pattern: string;
-                caseSensitive?: boolean;
-              } => {
-                if (typeof f !== "object" || f === null) return false;
-                if (!("field" in f) || !("matchType" in f) || !("pattern" in f))
-                  return false;
-                const field = (f as { field: unknown }).field;
-                const matchType = (f as { matchType: unknown }).matchType;
-                const pattern = (f as { pattern: unknown }).pattern;
-                return (
-                  typeof field === "string" &&
-                  typeof matchType === "string" &&
-                  typeof pattern === "string" &&
-                  ["title", "content", "description", "author", "any"].includes(
-                    field
-                  ) &&
-                  ["contains", "regex", "exact"].includes(matchType)
-                );
-              }
-            )
-            .map((f) => ({
-              field: f.field,
-              matchType: f.matchType,
-              pattern: f.pattern,
-              caseSensitive:
-                typeof f.caseSensitive === "boolean" ? f.caseSensitive : false,
-            }));
-        } catch {
-          return null;
-        }
-      };
-
-      // Helper to parse categories JSON
-      const parseCategoriesJson = (
-        jsonString: string | undefined
-      ): string[] | null => {
-        if (!jsonString) return null;
-        try {
-          const parsed = JSON.parse(jsonString) as unknown;
-          if (!Array.isArray(parsed)) return null;
-          // Validate that all items are strings
-          return parsed.filter(
-            (cat): cat is string => typeof cat === "string" && cat.length > 0
-          );
-        } catch {
-          return null;
-        }
-      };
-
-      // Helper to convert string boolean to boolean
-      const parseBoolean = (value: string | boolean | undefined): boolean => {
-        if (typeof value === "boolean") return value;
-        if (typeof value === "string") return value.toLowerCase() === "true";
-        return false;
-      };
-
       // Extract feeds from OPML structure
       const feeds: {
         url: string;
         title: string;
         categories: string[];
-        filters?: Array<{
-          field: "title" | "content" | "description" | "author" | "any";
-          matchType: "contains" | "regex" | "exact";
-          pattern: string;
-          caseSensitive: boolean;
-        }>;
+        filters?: FilterData[];
         filterEnabled?: boolean;
         filterMode?: "include" | "exclude";
       }[] = [];
@@ -1520,94 +1444,12 @@ export const subscriptionsRouter = router({
         });
       }
 
-      // Helper to parse filters JSON (same as parseOpml)
-      const parseFiltersJson = (
-        jsonString: string | undefined
-      ): Array<{
-        field: "title" | "content" | "description" | "author" | "any";
-        matchType: "contains" | "regex" | "exact";
-        pattern: string;
-        caseSensitive: boolean;
-      }> | null => {
-        if (!jsonString) return null;
-        try {
-          const parsed = JSON.parse(jsonString) as unknown;
-          if (!Array.isArray(parsed)) return null;
-          // Validate structure and normalize filters (caseSensitive defaults to false)
-          return parsed
-            .filter(
-              (
-                f
-              ): f is {
-                field: "title" | "content" | "description" | "author" | "any";
-                matchType: "contains" | "regex" | "exact";
-                pattern: string;
-                caseSensitive?: boolean;
-              } => {
-                if (typeof f !== "object" || f === null) return false;
-                if (!("field" in f) || !("matchType" in f) || !("pattern" in f))
-                  return false;
-                const field = (f as { field: unknown }).field;
-                const matchType = (f as { matchType: unknown }).matchType;
-                const pattern = (f as { pattern: unknown }).pattern;
-                return (
-                  typeof field === "string" &&
-                  typeof matchType === "string" &&
-                  typeof pattern === "string" &&
-                  ["title", "content", "description", "author", "any"].includes(
-                    field
-                  ) &&
-                  ["contains", "regex", "exact"].includes(matchType)
-                );
-              }
-            )
-            .map((f) => ({
-              field: f.field,
-              matchType: f.matchType,
-              pattern: f.pattern,
-              caseSensitive:
-                typeof f.caseSensitive === "boolean" ? f.caseSensitive : false,
-            }));
-        } catch {
-          return null;
-        }
-      };
-
-      // Helper to parse categories JSON
-      const parseCategoriesJson = (
-        jsonString: string | undefined
-      ): string[] | null => {
-        if (!jsonString) return null;
-        try {
-          const parsed = JSON.parse(jsonString) as unknown;
-          if (!Array.isArray(parsed)) return null;
-          // Validate that all items are strings
-          return parsed.filter(
-            (cat): cat is string => typeof cat === "string" && cat.length > 0
-          );
-        } catch {
-          return null;
-        }
-      };
-
-      // Helper to convert string boolean to boolean
-      const parseBoolean = (value: string | boolean | undefined): boolean => {
-        if (typeof value === "boolean") return value;
-        if (typeof value === "string") return value.toLowerCase() === "true";
-        return false;
-      };
-
       // Extract feeds from OPML
       const feedsToImport: {
         url: string;
         title: string;
         categories: string[];
-        filters?: Array<{
-          field: "title" | "content" | "description" | "author" | "any";
-          matchType: "contains" | "regex" | "exact";
-          pattern: string;
-          caseSensitive: boolean;
-        }>;
+        filters?: FilterData[];
         filterEnabled?: boolean;
         filterMode?: "include" | "exclude";
       }[] = [];

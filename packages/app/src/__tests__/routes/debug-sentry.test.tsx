@@ -62,7 +62,7 @@ describe("DebugSentryPage", () => {
 
     // Import the route after mock is set up
     const { Route } = await import("../../routes/debug-sentry");
-    DebugSentryPage = Route.options.component;
+    DebugSentryPage = Route.options.component!;
 
     // Mock fetch - return JSON response matching the component's expectations
     global.fetch = vi.fn().mockResolvedValue({
@@ -127,7 +127,7 @@ describe("DebugSentryPage", () => {
 
     // Now import the component - it will read the env without DSN
     const { Route } = await import("../../routes/debug-sentry");
-    const ComponentWithoutSentry = Route.options.component;
+    const ComponentWithoutSentry = Route.options.component!;
 
     render(<ComponentWithoutSentry />);
     await waitFor(() => {
@@ -177,6 +177,66 @@ describe("DebugSentryPage", () => {
         screen.getByText(/Transaction created and sent to Sentry!/),
       ).toBeInTheDocument();
     });
+  });
+
+  it("should trigger unhandled error button", async () => {
+    const user = userEvent.setup();
+
+    // Mock setTimeout to prevent the error from actually being thrown
+    const originalSetTimeout = global.setTimeout;
+    const mockSetTimeout = vi.fn((callback: () => void, delay: number) => {
+      if (delay === 100) {
+        // Capture the callback but don't execute it
+        return 999 as any; // Return a fake timeout ID
+      }
+      return originalSetTimeout(callback, delay);
+    });
+    global.setTimeout = mockSetTimeout as any;
+
+    render(<DebugSentryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
+    });
+
+    // Click the button that schedules an error
+    const button = screen.getByText("Trigger Unhandled Error");
+    await user.click(button);
+
+    // Verify the button exists and setTimeout was called
+    expect(button).toBeInTheDocument();
+    expect(mockSetTimeout).toHaveBeenCalled();
+
+    // Restore setTimeout
+    global.setTimeout = originalSetTimeout;
+  });
+
+  it("should trigger unhandled rejection button", async () => {
+    const user = userEvent.setup();
+
+    // Mock Promise.reject to prevent unhandled rejection
+    const originalPromiseReject = Promise.reject;
+    Promise.reject = vi.fn(() => {
+      // Return a resolved promise to prevent unhandled rejection
+      return Promise.resolve();
+    }) as any;
+
+    render(<DebugSentryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
+    });
+
+    // Click the button
+    const button = screen.getByText("Trigger Unhandled Rejection");
+    await user.click(button);
+
+    // Verify the button exists and Promise.reject was called
+    expect(button).toBeInTheDocument();
+    expect(Promise.reject).toHaveBeenCalled();
+
+    // Restore Promise.reject
+    Promise.reject = originalPromiseReject;
   });
 
   it("should test backend Sentry route when button is clicked", async () => {
@@ -234,7 +294,7 @@ describe("DebugSentryPage", () => {
       expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
     });
 
-    // Trigger first error
+    // Trigger first error (handled error, not unhandled)
     const errorButton = screen.getByText("Trigger Handled Error");
     await user.click(errorButton);
 
@@ -281,7 +341,7 @@ describe("DebugSentryPage - Error Messages", () => {
 
     vi.resetModules();
     const { Route } = await import("../../routes/debug-sentry");
-    DebugSentryPage = Route.options.component;
+    DebugSentryPage = Route.options.component!;
 
     // Mock fetch - return JSON response matching the component's expectations
     global.fetch = vi.fn().mockResolvedValue({
@@ -342,6 +402,147 @@ describe("DebugSentryPage - Error Messages", () => {
     await waitFor(() => {
       expect(
         screen.getByText(/Error captured and sent to Sentry!/),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("should handle 404 response from backend", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      headers: {
+        get: vi.fn().mockReturnValue("text/html"),
+      },
+      text: vi.fn().mockResolvedValue("<html>Not Found</html>"),
+    } as any);
+
+    const user = userEvent.setup();
+    render(<DebugSentryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
+    });
+
+    const button = screen.getByText("Test Backend Sentry Route");
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Backend debug endpoint not found/),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("should handle non-JSON response from backend", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: {
+        get: vi.fn().mockReturnValue("text/html"),
+      },
+      text: vi.fn().mockResolvedValue("<html>Server Error</html>"),
+    } as any);
+
+    const user = userEvent.setup();
+    render(<DebugSentryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
+    });
+
+    const button = screen.getByText("Test Backend Sentry Route");
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Backend returned non-JSON response/),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("should handle backend error with eventId", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: {
+        get: vi.fn().mockReturnValue("application/json"),
+      },
+      json: vi.fn().mockResolvedValue({
+        error: "Test error",
+        eventId: "backend-event-123",
+      }),
+    } as any);
+
+    const user = userEvent.setup();
+    render(<DebugSentryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
+    });
+
+    const button = screen.getByText("Test Backend Sentry Route");
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Backend test error captured!/),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("should handle backend error with note", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      headers: {
+        get: vi.fn().mockReturnValue("application/json"),
+      },
+      json: vi.fn().mockResolvedValue({
+        message: "Error occurred",
+        note: "Sentry disabled in dev",
+      }),
+    } as any);
+
+    const user = userEvent.setup();
+    render(<DebugSentryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
+    });
+
+    const button = screen.getByText("Test Backend Sentry Route");
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Error occurred.*Sentry disabled in dev/),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("should handle JSON parsing errors", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: {
+        get: vi.fn().mockReturnValue("application/json"),
+      },
+      json: vi.fn().mockRejectedValue(new SyntaxError("Invalid JSON")),
+    } as any);
+
+    const user = userEvent.setup();
+    render(<DebugSentryPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
+    });
+
+    const button = screen.getByText("Test Backend Sentry Route");
+    await user.click(button);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Backend returned invalid JSON/),
       ).toBeInTheDocument();
     });
   });

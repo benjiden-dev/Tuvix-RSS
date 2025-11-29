@@ -17,6 +17,7 @@ import { D1_MAX_PARAMETERS, chunkArray } from "@/db/utils";
 import * as schema from "@/db/schema";
 import { executeBatch } from "@/db/utils";
 import { withQueryMetrics } from "@/utils/db-metrics";
+import { upsertArticleState } from "@/db/helpers";
 
 /**
  * Helper function to transform database row to article output
@@ -418,58 +419,13 @@ export const articlesRouter = router({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const { userId } = ctx.user;
-
-      // Get existing state to preserve 'saved' flag
-      const existing = await withQueryMetrics(
-        "articles.markRead.getState",
-        async () =>
-          ctx.db
-            .select()
-            .from(schema.userArticleStates)
-            .where(
-              and(
-                eq(schema.userArticleStates.userId, userId),
-                eq(schema.userArticleStates.articleId, input.id)
-              )
-            )
-            .limit(1),
-        {
-          "db.table": "user_article_states",
-          "db.operation": "select",
-          "db.user_id": userId,
-        }
+      await upsertArticleState(
+        ctx.db,
+        userId,
+        input.id,
+        { read: true },
+        { operationName: "articles.markRead" }
       );
-
-      // Upsert: insert or update user_article_states
-      await withQueryMetrics(
-        "articles.markRead.upsert",
-        async () =>
-          ctx.db
-            .insert(schema.userArticleStates)
-            .values({
-              userId,
-              articleId: input.id,
-              read: true,
-              saved: existing[0]?.saved ?? false,
-            })
-            .onConflictDoUpdate({
-              target: [
-                schema.userArticleStates.userId,
-                schema.userArticleStates.articleId,
-              ],
-              set: {
-                read: true,
-                updatedAt: new Date(),
-              },
-            }),
-        {
-          "db.table": "user_article_states",
-          "db.operation": "upsert",
-          "db.user_id": userId,
-          "db.had_existing_state": existing.length > 0,
-        }
-      );
-
       return { success: true };
     }),
 
@@ -481,39 +437,7 @@ export const articlesRouter = router({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const { userId } = ctx.user;
-
-      // Get existing state to preserve 'saved' flag
-      const existing = await ctx.db
-        .select()
-        .from(schema.userArticleStates)
-        .where(
-          and(
-            eq(schema.userArticleStates.userId, userId),
-            eq(schema.userArticleStates.articleId, input.id)
-          )
-        )
-        .limit(1);
-
-      // Upsert: insert or update user_article_states
-      await ctx.db
-        .insert(schema.userArticleStates)
-        .values({
-          userId,
-          articleId: input.id,
-          read: false,
-          saved: existing[0]?.saved ?? false,
-        })
-        .onConflictDoUpdate({
-          target: [
-            schema.userArticleStates.userId,
-            schema.userArticleStates.articleId,
-          ],
-          set: {
-            read: false,
-            updatedAt: new Date(),
-          },
-        });
-
+      await upsertArticleState(ctx.db, userId, input.id, { read: false });
       return { success: true };
     }),
 
@@ -525,39 +449,7 @@ export const articlesRouter = router({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const { userId } = ctx.user;
-
-      // Get existing state to preserve 'read' flag
-      const existing = await ctx.db
-        .select()
-        .from(schema.userArticleStates)
-        .where(
-          and(
-            eq(schema.userArticleStates.userId, userId),
-            eq(schema.userArticleStates.articleId, input.id)
-          )
-        )
-        .limit(1);
-
-      // Upsert: insert or update user_article_states
-      await ctx.db
-        .insert(schema.userArticleStates)
-        .values({
-          userId,
-          articleId: input.id,
-          read: existing[0]?.read ?? false,
-          saved: true,
-        })
-        .onConflictDoUpdate({
-          target: [
-            schema.userArticleStates.userId,
-            schema.userArticleStates.articleId,
-          ],
-          set: {
-            saved: true,
-            updatedAt: new Date(),
-          },
-        });
-
+      await upsertArticleState(ctx.db, userId, input.id, { saved: true });
       return { success: true };
     }),
 
@@ -569,39 +461,7 @@ export const articlesRouter = router({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const { userId } = ctx.user;
-
-      // Get existing state to preserve 'read' flag
-      const existing = await ctx.db
-        .select()
-        .from(schema.userArticleStates)
-        .where(
-          and(
-            eq(schema.userArticleStates.userId, userId),
-            eq(schema.userArticleStates.articleId, input.id)
-          )
-        )
-        .limit(1);
-
-      // Upsert: insert or update user_article_states
-      await ctx.db
-        .insert(schema.userArticleStates)
-        .values({
-          userId,
-          articleId: input.id,
-          read: existing[0]?.read ?? false,
-          saved: false,
-        })
-        .onConflictDoUpdate({
-          target: [
-            schema.userArticleStates.userId,
-            schema.userArticleStates.articleId,
-          ],
-          set: {
-            saved: false,
-            updatedAt: new Date(),
-          },
-        });
-
+      await upsertArticleState(ctx.db, userId, input.id, { saved: false });
       return { success: true };
     }),
 
