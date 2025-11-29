@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/animate-ui/components/radix/dialog";
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFooter,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+} from "@/components/ui/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/animate-ui/components/radix/checkbox";
@@ -222,14 +222,14 @@ export function ImportPreviewDialog({
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl h-[85vh] flex flex-col">
-        <DialogHeader className="flex-shrink-0">
-          <DialogTitle>Preview OPML Import</DialogTitle>
-          <DialogDescription>
+    <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
+      <ResponsiveDialogContent className="max-w-3xl h-[85vh] flex flex-col">
+        <ResponsiveDialogHeader className="flex-shrink-0">
+          <ResponsiveDialogTitle>Preview OPML Import</ResponsiveDialogTitle>
+          <ResponsiveDialogDescription>
             Found {feeds.length} feeds. Select which ones to import.
-          </DialogDescription>
-        </DialogHeader>
+          </ResponsiveDialogDescription>
+        </ResponsiveDialogHeader>
 
         {/* Search and Controls */}
         <div className="space-y-3 flex-shrink-0">
@@ -488,7 +488,7 @@ export function ImportPreviewDialog({
           </ScrollArea>
         </div>
 
-        <DialogFooter className="flex-shrink-0">
+        <ResponsiveDialogFooter className="flex-shrink-0">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -502,8 +502,8 @@ export function ImportPreviewDialog({
           >
             Import {selected.size} Feed{selected.size !== 1 ? "s" : ""}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ResponsiveDialogFooter>
+      </ResponsiveDialogContent>
+    </ResponsiveDialog>
   );
 }
