@@ -358,6 +358,51 @@ export async function fetchSingleFeed(
 // =============================================================================
 
 /**
+ * Extract iTunes image URL from feed metadata
+ * Similar to function in subscriptions router, but doesn't parse raw XML
+ */
+function extractFeedItunesImage(feedData: AnyFeed): string | undefined {
+  const feed = feedData as Record<string, unknown>;
+
+  // Method 1: Direct namespace access
+  if ("itunes:image" in feed) {
+    const itunesImage = feed["itunes:image"];
+    if (typeof itunesImage === "string") {
+      return itunesImage;
+    }
+    if (
+      itunesImage &&
+      typeof itunesImage === "object" &&
+      "href" in itunesImage &&
+      typeof itunesImage.href === "string"
+    ) {
+      return itunesImage.href;
+    }
+  }
+
+  // Method 2: Nested itunes property
+  if ("itunes" in feed && feed.itunes) {
+    const itunes = feed.itunes as Record<string, unknown>;
+    if ("image" in itunes) {
+      const image = itunes.image;
+      if (typeof image === "string") {
+        return image;
+      }
+      if (
+        image &&
+        typeof image === "object" &&
+        "href" in image &&
+        typeof image.href === "string"
+      ) {
+        return image.href;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
  * Update source metadata from feed
  */
 async function updateSourceMetadata(
@@ -390,6 +435,43 @@ async function updateSourceMetadata(
   ) {
     // Atom uses links array
     updates.siteUrl = feed.links[0].href;
+  }
+
+  // Extract icon URL from feed (for podcasts with iTunes image)
+  // Priority: itunes:image > image.url > icon
+  const itunesImage = extractFeedItunesImage(feed);
+  const feedIconUrl =
+    itunesImage ||
+    ("image" in feed &&
+    typeof feed.image === "object" &&
+    feed.image !== null &&
+    "url" in feed.image &&
+    typeof feed.image.url === "string"
+      ? feed.image.url
+      : "icon" in feed && typeof feed.icon === "string"
+        ? feed.icon
+        : undefined);
+
+  // Get current source to check iconType
+  const currentSource = await db
+    .select()
+    .from(schema.sources)
+    .where(eq(schema.sources.id, sourceId))
+    .limit(1)
+    .then((rows) => rows[0]);
+
+  // Only update icon if:
+  // 1. iconType is 'auto' (not custom or none)
+  // 2. We found a new icon URL
+  // 3. Icon is missing OR different from current icon
+  if (
+    currentSource &&
+    (!currentSource.iconType || currentSource.iconType === "auto") &&
+    feedIconUrl &&
+    currentSource.iconUrl !== feedIconUrl
+  ) {
+    updates.iconUrl = feedIconUrl;
+    updates.iconUpdatedAt = new Date();
   }
 
   // Only update if we have something to update (beyond lastFetched)
@@ -727,12 +809,49 @@ async function extractArticleData(
   // Image URL
   let imageUrl: string | undefined = undefined;
 
-  // JSON Feed
-  if ("image" in item && typeof item.image === "string") {
+  // Priority 1: iTunes image (podcasts)
+  // Check for itunes:image attribute (common in podcast RSS feeds)
+  if ("itunes:image" in item) {
+    const itunesImage = (item as Record<string, unknown>)["itunes:image"];
+    if (typeof itunesImage === "string") {
+      imageUrl = itunesImage;
+    } else if (
+      itunesImage &&
+      typeof itunesImage === "object" &&
+      "href" in itunesImage &&
+      typeof itunesImage.href === "string"
+    ) {
+      imageUrl = itunesImage.href;
+    }
+  }
+  // Check nested itunes property
+  else if ("itunes" in item && item.itunes) {
+    const itunes = (item as Record<string, unknown>).itunes as Record<
+      string,
+      unknown
+    >;
+    if ("image" in itunes) {
+      const image = itunes.image;
+      if (typeof image === "string") {
+        imageUrl = image;
+      } else if (
+        image &&
+        typeof image === "object" &&
+        "href" in image &&
+        typeof image.href === "string"
+      ) {
+        imageUrl = image.href;
+      }
+    }
+  }
+
+  // Priority 2: JSON Feed image
+  if (!imageUrl && "image" in item && typeof item.image === "string") {
     imageUrl = item.image;
   }
-  // RSS enclosure
-  else if ("enclosures" in item && Array.isArray(item.enclosures)) {
+
+  // Priority 3: RSS image enclosure
+  if (!imageUrl && "enclosures" in item && Array.isArray(item.enclosures)) {
     const imageEnclosure = item.enclosures.find((enc) =>
       enc.type?.startsWith("image/")
     );
@@ -740,8 +859,9 @@ async function extractArticleData(
       imageUrl = imageEnclosure.url;
     }
   }
-  // Media RSS namespace
-  else if ("media" in item) {
+
+  // Priority 4: Media RSS namespace
+  if (!imageUrl && "media" in item) {
     const media = (item as Record<string, unknown>).media as
       | {
           thumbnail?: { url?: string };
