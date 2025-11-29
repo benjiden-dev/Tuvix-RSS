@@ -9,6 +9,7 @@ import { TRPCError } from "@trpc/server";
 import { eq, and, sql, type SQL } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import type { SQLiteTable, SQLiteColumn } from "drizzle-orm/sqlite-core";
+import * as schema from "@/db/schema";
 
 /**
  * Verify user owns a resource, throw NOT_FOUND if not
@@ -282,4 +283,79 @@ export async function updateManyToMany(
 
     await db.insert(linkTable).values(links);
   }
+}
+
+/**
+ * Options for upserting article state
+ */
+export interface ArticleStateUpdate {
+  read?: boolean;
+  saved?: boolean;
+}
+
+/**
+ * Upsert user article state (read/saved status)
+ *
+ * Preserves existing flags when not explicitly updated.
+ * Uses database upsert to handle both insert and update cases.
+ *
+ * @param db Database instance
+ * @param userId User ID
+ * @param articleId Article ID
+ * @param updates State updates (read and/or saved)
+ * @returns Promise that resolves when update is complete
+ *
+ * @example
+ * // Mark as read
+ * await upsertArticleState(ctx.db, userId, articleId, { read: true });
+ *
+ * // Toggle saved status
+ * await upsertArticleState(ctx.db, userId, articleId, { saved: true });
+ */
+export async function upsertArticleState(
+  db: Database,
+  userId: number,
+  articleId: number,
+  updates: ArticleStateUpdate
+): Promise<void> {
+  // Get existing state to preserve other flags
+  const existing = await db
+    .select()
+    .from(schema.userArticleStates)
+    .where(
+      and(
+        eq(schema.userArticleStates.userId, userId),
+        eq(schema.userArticleStates.articleId, articleId)
+      )
+    )
+    .limit(1);
+
+  const currentRead = existing[0]?.read ?? false;
+  const currentSaved = existing[0]?.saved ?? false;
+
+  const newRead = updates.read !== undefined ? updates.read : currentRead;
+  const newSaved = updates.saved !== undefined ? updates.saved : currentSaved;
+
+  // Build the set clause for updates (only include fields being changed)
+  const setClause: Partial<typeof schema.userArticleStates.$inferInsert> = {
+    updatedAt: new Date(),
+  };
+  if (updates.read !== undefined) setClause.read = updates.read;
+  if (updates.saved !== undefined) setClause.saved = updates.saved;
+
+  await db
+    .insert(schema.userArticleStates)
+    .values({
+      userId,
+      articleId,
+      read: newRead,
+      saved: newSaved,
+    })
+    .onConflictDoUpdate({
+      target: [
+        schema.userArticleStates.userId,
+        schema.userArticleStates.articleId,
+      ],
+      set: setClause,
+    });
 }
