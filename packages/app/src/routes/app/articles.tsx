@@ -36,8 +36,6 @@ import {
   ResponsiveAlertDialogHeader,
   ResponsiveAlertDialogTitle,
 } from "@/components/ui/responsive-alert-dialog";
-import { motion, useMotionValue, useTransform } from "motion/react";
-import { useIsMobile } from "@/hooks/use-mobile";
 import type { RouterOutputs } from "@/lib/api/trpc";
 
 type Article = RouterOutputs["articles"]["list"]["items"][number];
@@ -58,7 +56,6 @@ function ArticlesPage() {
   const markAllRead = useMarkAllRead();
   const { data: userSettings } = useUserSettings();
   const { ref, inView } = useInView();
-  const isMobile = useIsMobile();
   const [showFirstTimeTooltip, setShowFirstTimeTooltip] = useState(() => {
     if (typeof window === "undefined") return false;
     const hasSeenTooltip = localStorage.getItem("hasSeenArticleTooltip");
@@ -73,14 +70,6 @@ function ArticlesPage() {
   // Smart detection: Track seen article IDs
   const seenArticleIds = useRef<Set<number>>(new Set());
   const [newArticleIds, setNewArticleIds] = useState<Set<number>>(new Set());
-
-  // Pull-to-refresh state
-  const [isPulling, setIsPulling] = useState(false);
-  const pullDistance = useMotionValue(0);
-  const pullOpacity = useTransform(pullDistance, [0, 80], [0, 1]);
-  const pullRotation = useTransform(pullDistance, [0, 80], [0, 180]);
-  const startY = useRef(0);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   // Build filters from search params (only category and subscription, not read/saved)
   const filters: Record<string, unknown> = {};
@@ -249,72 +238,8 @@ function ArticlesPage() {
     setMarkOldDialogOpen(false);
   };
 
-  // Pull-to-refresh handlers
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (!isMobile || !containerRef.current) return;
-
-    // Only allow pull-to-refresh if we're at the top of the page
-    const scrollTop = containerRef.current.scrollTop || window.scrollY;
-    if (scrollTop > 0) return;
-
-    startY.current = e.touches[0].clientY;
-    setIsPulling(true);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (!isPulling || !isMobile) return;
-
-    const currentY = e.touches[0].clientY;
-    const distance = Math.max(0, currentY - startY.current);
-
-    // Apply resistance - the further you pull, the harder it gets
-    const resistance = 0.5;
-    const adjustedDistance = Math.min(distance * resistance, 100);
-
-    pullDistance.set(adjustedDistance);
-  };
-
-  const handleTouchEnd = () => {
-    if (!isPulling || !isMobile) return;
-
-    const distance = pullDistance.get();
-
-    // Trigger refresh if pulled down far enough
-    if (distance > 60) {
-      handleRefresh();
-    }
-
-    // Reset
-    pullDistance.set(0);
-    setIsPulling(false);
-    startY.current = 0;
-  };
-
   return (
-    <div
-      ref={containerRef}
-      className="flex-1 space-y-4 w-full max-w-full min-w-0"
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* Pull-to-refresh indicator */}
-      {isMobile && (
-        <motion.div
-          className="fixed top-20 left-0 right-0 flex justify-center items-center z-50 pointer-events-none"
-          style={{
-            opacity: pullOpacity,
-          }}
-        >
-          <motion.div
-            className="bg-background/80 backdrop-blur-sm rounded-full p-3 shadow-lg"
-            style={{ rotate: pullRotation }}
-          >
-            <RefreshCw className="w-6 h-6 text-muted-foreground" />
-          </motion.div>
-        </motion.div>
-      )}
-
+    <div className="flex-1 space-y-4 w-full max-w-full min-w-0">
       {/* First-time tooltip */}
       {showFirstTimeTooltip && userSettings && (
         <Alert>
