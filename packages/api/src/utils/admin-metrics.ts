@@ -61,7 +61,9 @@ export function aggregateByDay<T>(
  */
 export function calculateStartDate(days: number): Date {
   if (typeof days !== "number" || !Number.isFinite(days) || days < 1) {
-    throw new Error("calculateStartDate: 'days' must be a positive number (>= 1)");
+    throw new Error(
+      "calculateStartDate: 'days' must be a positive number (>= 1)"
+    );
   }
   if (typeof days !== "number" || !Number.isFinite(days) || days < 1) {
     throw new Error(

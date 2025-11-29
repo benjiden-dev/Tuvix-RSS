@@ -289,6 +289,35 @@ export async function seedGlobalSettings(db: any) {
 }
 
 /**
+ * Seed a test article for a source
+ */
+export async function seedTestArticle(
+  db: any,
+  sourceId: number,
+  overrides?: {
+    title?: string;
+    link?: string;
+    guid?: string;
+    description?: string;
+    publishedAt?: Date;
+  }
+) {
+  const [article] = await db
+    .insert(schema.articles)
+    .values({
+      sourceId,
+      guid: overrides?.guid || `article-${Date.now()}`,
+      title: overrides?.title || "Test Article",
+      link: overrides?.link || "https://example.com/article",
+      description: overrides?.description || "A test article",
+      publishedAt: overrides?.publishedAt || new Date(),
+    })
+    .returning();
+
+  return article;
+}
+
+/**
  * Clean up database after tests
  */
 export function cleanupTestDb(db: any) {
