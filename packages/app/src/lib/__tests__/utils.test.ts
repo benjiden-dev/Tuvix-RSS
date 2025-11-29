@@ -42,5 +42,11 @@ describe("Utils", () => {
       expect(typeof result).toBe("string");
       expect(result.length).toBeGreaterThan(0);
     });
+
+    it("should return a URL string", () => {
+      const result = getPublicBaseUrl();
+      // Should return a valid URL origin (starts with http/https)
+      expect(result.startsWith("http")).toBe(true);
+    });
   });
 });

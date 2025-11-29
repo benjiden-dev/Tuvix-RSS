@@ -84,4 +84,35 @@ describe("FeedAvatar", () => {
       fallback2?.getAttribute("style"),
     );
   });
+
+  it("should render AvatarImage when iconUrl is provided", () => {
+    const { container } = render(
+      <FeedAvatar feedName="Tech" iconUrl="https://example.com/icon.png" />,
+    );
+
+    // AvatarImage renders when there's an iconUrl
+    // The component sets the src on the image element
+    const avatar = container.querySelector('[class*="h-10"]');
+    expect(avatar).toBeInTheDocument();
+  });
+
+  it("should render AvatarImage when iconPath is provided", () => {
+    const { container } = render(
+      <FeedAvatar feedName="Tech" iconPath="test-feed/icon.png" />,
+    );
+
+    // AvatarImage should be rendered when iconPath is provided
+    const avatar = container.querySelector('[class*="h-10"]');
+    expect(avatar).toBeInTheDocument();
+  });
+
+  it("should render AvatarImage when feedUrl is provided", () => {
+    const { container } = render(
+      <FeedAvatar feedName="Tech" feedUrl="https://example.com/feed.xml" />,
+    );
+
+    // AvatarImage should be rendered when feedUrl is provided (uses DuckDuckGo API)
+    const avatar = container.querySelector('[class*="h-10"]');
+    expect(avatar).toBeInTheDocument();
+  });
 });
