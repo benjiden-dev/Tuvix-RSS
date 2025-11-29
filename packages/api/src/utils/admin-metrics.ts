@@ -55,9 +55,15 @@ export function aggregateByDay<T>(
 /**
  * Calculate the start date for a time range
  *
- * @param days - Number of days to go back
+ * @param days - Number of days to go back (must be a positive integer >= 1)
  * @returns Start date
+ * @throws Error if days is not a positive finite number
  */
 export function calculateStartDate(days: number): Date {
+  if (typeof days !== "number" || !Number.isFinite(days) || days < 1) {
+    throw new Error(
+      "calculateStartDate: 'days' must be a positive number (>= 1)"
+    );
+  }
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }

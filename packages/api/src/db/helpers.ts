@@ -305,9 +305,14 @@ export interface ArticleStateMetricsOptions {
 /**
  * Upsert user article state (read/saved status)
  *
- * Preserves existing flags when not explicitly updated.
+ * Preserves existing `read` and `saved` flags when not explicitly updated.
  * Uses database upsert to handle both insert and update cases.
  * Includes database query metrics when operationName is provided.
+ *
+ * **Note:** This function only manages `read` and `saved` fields. Audio-related
+ * fields (`audioPosition`, `audioDuration`, `audioCompletedAt`, `audioLastPlayedAt`)
+ * are NOT preserved by this function and should be managed separately via the
+ * dedicated audio progress endpoints.
  *
  * @param db Database instance
  * @param userId User ID
@@ -364,7 +369,7 @@ export async function upsertArticleState(
   if (updates.read !== undefined) setClause.read = updates.read;
   if (updates.saved !== undefined) setClause.saved = updates.saved;
 
-  const upsertQuery = () =>
+  const executeUpsert = async () =>
     db
       .insert(schema.userArticleStates)
       .values({
@@ -384,7 +389,7 @@ export async function upsertArticleState(
   if (options?.operationName) {
     await withQueryMetrics(
       `${options.operationName}.upsert`,
-      async () => upsertQuery(),
+      executeUpsert,
       {
         "db.table": "user_article_states",
         "db.operation": "upsert",
@@ -393,6 +398,6 @@ export async function upsertArticleState(
       }
     );
   } else {
-    await upsertQuery();
+    await executeUpsert();
   }
 }

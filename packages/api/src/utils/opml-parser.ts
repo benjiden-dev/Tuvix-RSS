@@ -80,7 +80,7 @@ export function parseCategoriesJson(
   try {
     const parsed = JSON.parse(jsonString) as unknown;
     if (!Array.isArray(parsed)) return null;
-    // Validate that all items are strings
+    // Validate that all items are non-empty strings (after trimming whitespace)
     return parsed.filter(
       (cat): cat is string => typeof cat === "string" && cat.trim().length > 0
     );
