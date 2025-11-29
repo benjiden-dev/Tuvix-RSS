@@ -36,15 +36,15 @@ import {
 import { useTheme } from "@/components/provider/theme-provider";
 import type { ThemeId } from "@/lib/themes/types";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/animate-ui/components/radix/alert-dialog";
+  ResponsiveAlertDialog,
+  ResponsiveAlertDialogAction,
+  ResponsiveAlertDialogCancel,
+  ResponsiveAlertDialogContent,
+  ResponsiveAlertDialogDescription,
+  ResponsiveAlertDialogFooter,
+  ResponsiveAlertDialogHeader,
+  ResponsiveAlertDialogTitle,
+} from "@/components/ui/responsive-alert-dialog";
 
 export const Route = createFileRoute("/app/settings")({
   component: SettingsPage,
@@ -457,22 +457,25 @@ function SettingsPage() {
       </SettingsPageLayout>
 
       {/* Logout Confirmation Dialog */}
-      <AlertDialog open={logoutDialogOpen} onOpenChange={setLogoutDialogOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Log out</AlertDialogTitle>
-            <AlertDialogDescription>
+      <ResponsiveAlertDialog
+        open={logoutDialogOpen}
+        onOpenChange={setLogoutDialogOpen}
+      >
+        <ResponsiveAlertDialogContent>
+          <ResponsiveAlertDialogHeader>
+            <ResponsiveAlertDialogTitle>Log out</ResponsiveAlertDialogTitle>
+            <ResponsiveAlertDialogDescription>
               Are you sure you want to log out?
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmLogout}>
+            </ResponsiveAlertDialogDescription>
+          </ResponsiveAlertDialogHeader>
+          <ResponsiveAlertDialogFooter>
+            <ResponsiveAlertDialogCancel>Cancel</ResponsiveAlertDialogCancel>
+            <ResponsiveAlertDialogAction onClick={confirmLogout}>
               Log out
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+            </ResponsiveAlertDialogAction>
+          </ResponsiveAlertDialogFooter>
+        </ResponsiveAlertDialogContent>
+      </ResponsiveAlertDialog>
     </>
   );
 }
