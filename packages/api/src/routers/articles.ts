@@ -326,7 +326,7 @@ export const articlesRouter = router({
 
         const countResult = await withQueryMetrics(
           "articles.list.count",
-          async () => countQueryBuilder,
+          async () => await countQueryBuilder,
           {
             "db.table": "articles",
             "db.operation": "count",
