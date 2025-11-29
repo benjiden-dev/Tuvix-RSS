@@ -181,7 +181,7 @@ describe("DebugSentryPage", () => {
 
   it("should trigger unhandled error button", async () => {
     const user = userEvent.setup();
-    
+
     // Mock setTimeout to prevent the error from actually being thrown
     const originalSetTimeout = global.setTimeout;
     const mockSetTimeout = vi.fn((callback: () => void, delay: number) => {
@@ -213,7 +213,7 @@ describe("DebugSentryPage", () => {
 
   it("should trigger unhandled rejection button", async () => {
     const user = userEvent.setup();
-    
+
     // Mock Promise.reject to prevent unhandled rejection
     const originalPromiseReject = Promise.reject;
     Promise.reject = vi.fn(() => {
