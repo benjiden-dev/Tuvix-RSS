@@ -62,7 +62,7 @@ describe("DebugSentryPage", () => {
 
     // Import the route after mock is set up
     const { Route } = await import("../../routes/debug-sentry");
-    DebugSentryPage = Route.options.component;
+    DebugSentryPage = Route.options.component!;
 
     // Mock fetch - return JSON response matching the component's expectations
     global.fetch = vi.fn().mockResolvedValue({
@@ -127,7 +127,7 @@ describe("DebugSentryPage", () => {
 
     // Now import the component - it will read the env without DSN
     const { Route } = await import("../../routes/debug-sentry");
-    const ComponentWithoutSentry = Route.options.component;
+    const ComponentWithoutSentry = Route.options.component!;
 
     render(<ComponentWithoutSentry />);
     await waitFor(() => {
@@ -181,35 +181,62 @@ describe("DebugSentryPage", () => {
 
   it("should trigger unhandled error button", async () => {
     const user = userEvent.setup();
+    
+    // Mock setTimeout to prevent the error from actually being thrown
+    const originalSetTimeout = global.setTimeout;
+    const mockSetTimeout = vi.fn((callback: () => void, delay: number) => {
+      if (delay === 100) {
+        // Capture the callback but don't execute it
+        return 999 as any; // Return a fake timeout ID
+      }
+      return originalSetTimeout(callback, delay);
+    });
+    global.setTimeout = mockSetTimeout as any;
+
     render(<DebugSentryPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
     });
 
-    // We can't fully test unhandled errors in tests, but we can verify the button click
+    // Click the button that schedules an error
     const button = screen.getByText("Trigger Unhandled Error");
     await user.click(button);
 
-    // The function clears previous state and schedules an error via setTimeout
-    // We just verify the button works - the actual error would be caught by global handler
+    // Verify the button exists and setTimeout was called
     expect(button).toBeInTheDocument();
+    expect(mockSetTimeout).toHaveBeenCalled();
+
+    // Restore setTimeout
+    global.setTimeout = originalSetTimeout;
   });
 
   it("should trigger unhandled rejection button", async () => {
     const user = userEvent.setup();
+    
+    // Mock Promise.reject to prevent unhandled rejection
+    const originalPromiseReject = Promise.reject;
+    Promise.reject = vi.fn(() => {
+      // Return a resolved promise to prevent unhandled rejection
+      return Promise.resolve();
+    }) as any;
+
     render(<DebugSentryPage />);
 
     await waitFor(() => {
       expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
     });
 
-    // We can't fully test unhandled rejections in tests, but we can verify the button click
+    // Click the button
     const button = screen.getByText("Trigger Unhandled Rejection");
     await user.click(button);
 
-    // The function creates a rejected promise - verify the button exists and was clickable
+    // Verify the button exists and Promise.reject was called
     expect(button).toBeInTheDocument();
+    expect(Promise.reject).toHaveBeenCalled();
+
+    // Restore Promise.reject
+    Promise.reject = originalPromiseReject;
   });
 
   it("should test backend Sentry route when button is clicked", async () => {
@@ -267,7 +294,7 @@ describe("DebugSentryPage", () => {
       expect(screen.getByText("Sentry Enabled")).toBeInTheDocument();
     });
 
-    // Trigger first error
+    // Trigger first error (handled error, not unhandled)
     const errorButton = screen.getByText("Trigger Handled Error");
     await user.click(errorButton);
 
@@ -314,7 +341,7 @@ describe("DebugSentryPage - Error Messages", () => {
 
     vi.resetModules();
     const { Route } = await import("../../routes/debug-sentry");
-    DebugSentryPage = Route.options.component;
+    DebugSentryPage = Route.options.component!;
 
     // Mock fetch - return JSON response matching the component's expectations
     global.fetch = vi.fn().mockResolvedValue({
