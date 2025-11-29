@@ -51,6 +51,9 @@ const checkVerificationAndNavigate = async (
             return fetch(url, {
               ...options,
               credentials: "include",
+              headers: {
+                ...options?.headers, // Preserve Sentry trace headers
+              },
             });
           },
         }),
@@ -272,6 +275,8 @@ export const useLogout = () => {
     mutationFn: () => authClient.signOut(),
     onSuccess: async () => {
       // Better Auth automatically clears session cookie
+      // Clear Sentry user context
+      Sentry.setUser(null);
       toast.success("Logged out");
       await router.navigate({ to: "/" });
     },
