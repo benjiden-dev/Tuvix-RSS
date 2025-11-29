@@ -13,7 +13,7 @@ import { eq } from "drizzle-orm";
 import { fetchSingleFeed } from "../rss-fetcher";
 
 describe("RSS Fetcher - iTunes Podcast Images", () => {
-  let db!: ReturnType<typeof createTestDb>;
+  let db: ReturnType<typeof createTestDb>;
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
