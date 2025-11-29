@@ -510,7 +510,7 @@ function SubscriptionsPage() {
   return (
     <div className="flex flex-col gap-4 max-w-5xl mx-auto w-full">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row gap-2 items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Subscriptions</h1>
           <p className="text-muted-foreground text-sm">
@@ -519,16 +519,16 @@ function SubscriptionsPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleExportSubscriptions}>
-            <Download className="mr-2 size-4" />
-            Export OPML
+            <Download className="md:mr-2 size-4" />
+            <span className="hidden md:inline">Export OPML</span>
           </Button>
           <Button
             variant="outline"
             onClick={() => fileInputRef.current?.click()}
             disabled={parseOPML.isPending}
           >
-            <Upload className="mr-2 size-4" />
-            Import OPML
+            <Upload className="md:mr-2 size-4" />
+            <span className="hidden md:inline">Import OPML</span>
           </Button>
           <Button onClick={() => setShowAddForm(!showAddForm)}>
             <Plus className="mr-2 size-4" />
