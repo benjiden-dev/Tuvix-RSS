@@ -2,17 +2,24 @@
 
 **Take back your feed.**
 
-Tuvix is a modern RSS aggregator that helps you follow all your favorite blogs, podcasts, and news sources in one place. It's not a social network, it's not an algorithmic feed, it's just what the early internet was supposed to be.
+Tuvix is a modern RSS aggregator that helps you follow all your favorite blogs, podcasts, and news sources in one place. It's not a social network, it's not an algorithmic feed, it's just old-fashioned RSS.
 
-## 🚀 Try it Now
+## Hosted
 
 Head over to **[tuvix.app](https://tuvix.app)** to create your free account and start reading!
 
-No installation needed - just sign up and start adding your favorite RSS feeds.
+Immediately begin subscribing to your favorite feeds. Remember, you can always export your data to OPML and migrate to your own self-hosted instance, or any other RSS reader.
 
 ---
 
-## 🏠 Self-Hosting
+## 🚀 Deployment
+
+Tuvix supports two deployment methods:
+
+- **🐳 Docker Compose** - Self-hosted with containers
+- **☁️ Cloudflare** - Serverless edge deployment (Workers + Pages)
+
+See the **[Deployment Guide](./docs/deployment.md)** for detailed instructions.
 
 ### Quick Start (Docker)
 
@@ -73,16 +80,6 @@ See `env.example` for all options.
 6. Open a Pull Request targeting the `dev` branch
 
 See the [developer documentation](./docs/developer/) for detailed contributor guidelines.
-
----
-
-## 🐛 Troubleshooting
-
-**Port already in use:** Change `PORT` in `.env`
-
-**Database locked:** `pnpm run db:reset`
-
-**Need help?** [Open an issue](https://github.com/techsquidtv/TuvixRSS/issues)
 
 ---
 
