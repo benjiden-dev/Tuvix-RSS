@@ -810,39 +810,9 @@ async function extractArticleData(
   let imageUrl: string | undefined = undefined;
 
   // Priority 1: iTunes image (podcasts)
-  // Check for itunes:image attribute (common in podcast RSS feeds)
-  if ("itunes:image" in item) {
-    const itunesImage = (item as Record<string, unknown>)["itunes:image"];
-    if (typeof itunesImage === "string") {
-      imageUrl = itunesImage;
-    } else if (
-      itunesImage &&
-      typeof itunesImage === "object" &&
-      "href" in itunesImage &&
-      typeof itunesImage.href === "string"
-    ) {
-      imageUrl = itunesImage.href;
-    }
-  }
-  // Check nested itunes property
-  else if ("itunes" in item && item.itunes) {
-    const itunes = (item as Record<string, unknown>).itunes as Record<
-      string,
-      unknown
-    >;
-    if ("image" in itunes) {
-      const image = itunes.image;
-      if (typeof image === "string") {
-        imageUrl = image;
-      } else if (
-        image &&
-        typeof image === "object" &&
-        "href" in image &&
-        typeof image.href === "string"
-      ) {
-        imageUrl = image.href;
-      }
-    }
+  const itunesImageUrl = extractItunesImage(item);
+  if (itunesImageUrl) {
+    imageUrl = itunesImageUrl;
   }
 
   // Priority 2: JSON Feed image
