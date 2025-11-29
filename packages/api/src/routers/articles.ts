@@ -419,7 +419,13 @@ export const articlesRouter = router({
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ ctx, input }) => {
       const { userId } = ctx.user;
-      await upsertArticleState(ctx.db, userId, input.id, { read: true });
+      await upsertArticleState(
+        ctx.db,
+        userId,
+        input.id,
+        { read: true },
+        { operationName: "articles.markRead" }
+      );
       return { success: true };
     }),
 

@@ -10,6 +10,7 @@ import { eq, and, sql, type SQL } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import type { SQLiteTable, SQLiteColumn } from "drizzle-orm/sqlite-core";
 import * as schema from "@/db/schema";
+import { withQueryMetrics } from "@/utils/db-metrics";
 
 /**
  * Verify user owns a resource, throw NOT_FOUND if not
@@ -294,41 +295,61 @@ export interface ArticleStateUpdate {
 }
 
 /**
+ * Options for metrics tracking in article state operations
+ */
+export interface ArticleStateMetricsOptions {
+  /** Optional operation name prefix for metrics (e.g., "articles.markRead") */
+  operationName?: string;
+}
+
+/**
  * Upsert user article state (read/saved status)
  *
  * Preserves existing flags when not explicitly updated.
  * Uses database upsert to handle both insert and update cases.
+ * Includes database query metrics when operationName is provided.
  *
  * @param db Database instance
  * @param userId User ID
  * @param articleId Article ID
  * @param updates State updates (read and/or saved)
+ * @param options Optional metrics options
  * @returns Promise that resolves when update is complete
  *
  * @example
- * // Mark as read
- * await upsertArticleState(ctx.db, userId, articleId, { read: true });
+ * // Mark as read with metrics
+ * await upsertArticleState(ctx.db, userId, articleId, { read: true }, { operationName: "articles.markRead" });
  *
- * // Toggle saved status
+ * // Toggle saved status without metrics
  * await upsertArticleState(ctx.db, userId, articleId, { saved: true });
  */
 export async function upsertArticleState(
   db: Database,
   userId: number,
   articleId: number,
-  updates: ArticleStateUpdate
+  updates: ArticleStateUpdate,
+  options?: ArticleStateMetricsOptions
 ): Promise<void> {
   // Get existing state to preserve other flags
-  const existing = await db
-    .select()
-    .from(schema.userArticleStates)
-    .where(
-      and(
-        eq(schema.userArticleStates.userId, userId),
-        eq(schema.userArticleStates.articleId, articleId)
+  const selectQuery = async () =>
+    db
+      .select()
+      .from(schema.userArticleStates)
+      .where(
+        and(
+          eq(schema.userArticleStates.userId, userId),
+          eq(schema.userArticleStates.articleId, articleId)
+        )
       )
-    )
-    .limit(1);
+      .limit(1);
+
+  const existing = options?.operationName
+    ? await withQueryMetrics(`${options.operationName}.getState`, selectQuery, {
+        "db.table": "user_article_states",
+        "db.operation": "select",
+        "db.user_id": userId,
+      })
+    : await selectQuery();
 
   const currentRead = existing[0]?.read ?? false;
   const currentSaved = existing[0]?.saved ?? false;
@@ -343,19 +364,35 @@ export async function upsertArticleState(
   if (updates.read !== undefined) setClause.read = updates.read;
   if (updates.saved !== undefined) setClause.saved = updates.saved;
 
-  await db
-    .insert(schema.userArticleStates)
-    .values({
-      userId,
-      articleId,
-      read: newRead,
-      saved: newSaved,
-    })
-    .onConflictDoUpdate({
-      target: [
-        schema.userArticleStates.userId,
-        schema.userArticleStates.articleId,
-      ],
-      set: setClause,
-    });
+  const upsertQuery = () =>
+    db
+      .insert(schema.userArticleStates)
+      .values({
+        userId,
+        articleId,
+        read: newRead,
+        saved: newSaved,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.userArticleStates.userId,
+          schema.userArticleStates.articleId,
+        ],
+        set: setClause,
+      });
+
+  if (options?.operationName) {
+    await withQueryMetrics(
+      `${options.operationName}.upsert`,
+      async () => upsertQuery(),
+      {
+        "db.table": "user_article_states",
+        "db.operation": "upsert",
+        "db.user_id": userId,
+        "db.had_existing_state": existing.length > 0,
+      }
+    );
+  } else {
+    await upsertQuery();
+  }
 }
