@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook } from "@testing-library/react";
 import { createWrapper } from "@/test/test-utils";
 import * as useNetworkStatusModule from "@/hooks/use-network-status";
 
