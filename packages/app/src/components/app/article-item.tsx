@@ -230,9 +230,10 @@ export function ArticleItem({ article, className }: ArticleItemProps) {
                 {article.title || "Untitled Article"}
               </ItemTitle>
               {article.description && (
-                <ItemDescription className="text-muted-foreground line-clamp-3 leading-relaxed">
-                  {article.description}
-                </ItemDescription>
+                <ItemDescription
+                  className="text-muted-foreground line-clamp-3 leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: article.description }}
+                />
               )}
             </div>
             {/* Article thumbnail image */}

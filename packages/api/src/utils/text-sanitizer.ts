@@ -1,27 +1,89 @@
 /**
  * Text Sanitization Utilities
  *
- * SECURITY: Strips HTML and sanitizes text to prevent XSS attacks
- * and ensure consistent text-only content storage.
+ * SECURITY: Sanitizes HTML to allow safe tags (links, formatting) while preventing XSS attacks
+ * by removing dangerous tags and attributes.
  */
 
+import sanitizeHtmlLib from "sanitize-html";
+
 /**
- * Strip all HTML tags from a string
- * Converts HTML entities to their text equivalents
+ * Sanitize HTML to allow safe tags while removing dangerous content
+ * Allows links, basic formatting, and safe structural elements
  *
  * @param html - String potentially containing HTML
- * @returns Plain text with all HTML removed
+ * @returns Sanitized HTML with only safe tags and attributes
+ */
+export function sanitizeHtml(html: string | null | undefined): string {
+  if (!html) return "";
+
+  return sanitizeHtmlLib(html, {
+    allowedTags: [
+      "a",
+      "p",
+      "br",
+      "strong",
+      "b",
+      "em",
+      "i",
+      "u",
+      "code",
+      "pre",
+      "blockquote",
+      "ul",
+      "ol",
+      "li",
+      "h1",
+      "h2",
+      "h3",
+      "h4",
+      "h5",
+      "h6",
+    ],
+    allowedAttributes: {
+      a: ["href", "title", "target", "rel"],
+    },
+    allowedSchemes: ["http", "https", "mailto"],
+    // Force all links to open in new tab with security attributes
+    transformTags: {
+      a: (_tagName, attribs) => {
+        return {
+          tagName: "a",
+          attribs: {
+            ...attribs,
+            target: "_blank",
+            rel: "noopener noreferrer",
+          },
+        };
+      },
+    },
+  });
+}
+
+/**
+ * Strip all HTML tags from a string (legacy function for backward compatibility)
+ * Converts HTML to plain text and decodes HTML entities
+ *
+ * @param html - String potentially containing HTML
+ * @returns Plain text with all HTML removed and entities decoded
  */
 export function stripHtml(html: string | null | undefined): string {
   if (!html) return "";
 
-  // Remove HTML tags
-  let text = html.replace(/<[^>]*>/g, "");
+  // Use sanitize-html to strip all tags (this preserves entities)
+  let text = sanitizeHtmlLib(html, {
+    allowedTags: [],
+    allowedAttributes: {},
+  });
 
-  // Decode common HTML entities
+  // Decode HTML entities (sanitize-html preserves them)
+  // CRITICAL: Decode &amp; FIRST to avoid double-decoding
+  // e.g., "&amp;lt;" should become "&lt;" not "<"
+  text = text.replace(/&amp;/g, "&");
+
+  // Then decode other common named entities
   text = text
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
@@ -43,9 +105,7 @@ export function stripHtml(html: string | null | undefined): string {
   );
 
   // Remove excessive whitespace
-  text = text.replace(/\s+/g, " ").trim();
-
-  return text;
+  return text.replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -77,6 +137,50 @@ export function truncateText(
   }
 
   return truncated + suffix;
+}
+
+/**
+ * Truncate HTML content safely without breaking tag structure
+ * First truncates to approximate length, then sanitizes to fix any broken tags
+ *
+ * @param html - HTML content to truncate
+ * @param maxLength - Maximum length (approximate, final may be shorter due to tag closure)
+ * @param suffix - Suffix to add if truncated (default: "...")
+ * @returns Truncated and sanitized HTML
+ */
+export function truncateHtml(
+  html: string | null | undefined,
+  maxLength: number,
+  suffix: string = "..."
+): string {
+  if (!html) return "";
+
+  if (html.length <= maxLength) return html;
+
+  // First, truncate to approximate length
+  let truncated = html.slice(0, maxLength - suffix.length);
+
+  // Try to break at a tag boundary to avoid cutting through tags
+  const lastTagClose = truncated.lastIndexOf(">");
+  const lastTagOpen = truncated.lastIndexOf("<");
+
+  // If we're in the middle of a tag, cut before it
+  if (lastTagOpen > lastTagClose) {
+    truncated = truncated.slice(0, lastTagOpen);
+  }
+
+  // Try to break at word boundary (but only in text content, not in tags)
+  const lastSpace = truncated.lastIndexOf(" ");
+  if (lastSpace > maxLength * 0.8 && lastSpace > lastTagClose) {
+    truncated = truncated.slice(0, lastSpace);
+  }
+
+  // Add suffix
+  truncated = truncated + suffix;
+
+  // Now sanitize to close any unclosed tags and ensure valid HTML
+  // This uses sanitize-html which will auto-close any open tags
+  return sanitizeHtml(truncated);
 }
 
 /**

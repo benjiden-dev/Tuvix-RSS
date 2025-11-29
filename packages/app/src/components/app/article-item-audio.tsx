@@ -244,9 +244,10 @@ export function ArticleItemAudio({
 
               {/* Description */}
               {article.description && (
-                <ItemDescription className="text-muted-foreground line-clamp-2 leading-relaxed">
-                  {article.description}
-                </ItemDescription>
+                <ItemDescription
+                  className="text-muted-foreground line-clamp-2 leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: article.description }}
+                />
               )}
             </div>
 
