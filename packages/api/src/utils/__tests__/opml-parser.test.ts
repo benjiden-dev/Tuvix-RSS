@@ -164,11 +164,7 @@ describe("OPML Parser Utilities", () => {
     });
 
     it("should return empty array for array with only invalid items", () => {
-      const json = JSON.stringify([
-        { invalid: "object" },
-        null,
-        "string",
-      ]);
+      const json = JSON.stringify([{ invalid: "object" }, null, "string"]);
 
       const result = parseFiltersJson(json);
 

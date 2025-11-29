@@ -387,16 +387,12 @@ export async function upsertArticleState(
       });
 
   if (options?.operationName) {
-    await withQueryMetrics(
-      `${options.operationName}.upsert`,
-      executeUpsert,
-      {
-        "db.table": "user_article_states",
-        "db.operation": "upsert",
-        "db.user_id": userId,
-        "db.had_existing_state": existing.length > 0,
-      }
-    );
+    await withQueryMetrics(`${options.operationName}.upsert`, executeUpsert, {
+      "db.table": "user_article_states",
+      "db.operation": "upsert",
+      "db.user_id": userId,
+      "db.had_existing_state": existing.length > 0,
+    });
   } else {
     await executeUpsert();
   }

@@ -3,11 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import {
-  aggregateByDay,
-  calculateStartDate,
-  type TimeSeriesDataPoint,
-} from "../admin-metrics";
+import { aggregateByDay, calculateStartDate } from "../admin-metrics";
 
 describe("Admin Metrics Utilities", () => {
   describe("aggregateByDay", () => {
@@ -111,9 +107,9 @@ describe("Admin Metrics Utilities", () => {
 
     it("should handle large number of records efficiently", () => {
       const records = Array.from({ length: 1000 }, (_, i) => ({
-        createdAt: new Date(
-          "2024-01-15T00:00:00Z"
-        ).getTime() + Math.floor(i / 100) * 24 * 60 * 60 * 1000,
+        createdAt:
+          new Date("2024-01-15T00:00:00Z").getTime() +
+          Math.floor(i / 100) * 24 * 60 * 60 * 1000,
       })).map((r) => ({ createdAt: new Date(r.createdAt) }));
 
       const result = aggregateByDay(
