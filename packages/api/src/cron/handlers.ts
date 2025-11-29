@@ -8,7 +8,7 @@
 import { createDatabase } from "@/db/client";
 import { fetchAllFeeds } from "@/services/rss-fetcher";
 import { getGlobalSettings } from "@/services/global-settings";
-import { inArray, lt, or, isNull, and } from "drizzle-orm";
+import { inArray, lt, or, isNull, and, eq } from "drizzle-orm";
 import * as schema from "@/db/schema";
 import type { Env } from "@/types";
 import { D1_MAX_PARAMETERS, chunkArray } from "@/db/utils";
@@ -130,24 +130,37 @@ async function _handleArticlePrune(env: Env): Promise<{
         const cutoffTimestamp = cutoffDate.getTime();
 
         // Find articles to delete (use publishedAt or createdAt if publishedAt is null)
+        // Exclude articles that are saved by any user
         const cutoffDateForComparison = new Date(cutoffTimestamp);
-        // Use SQL COALESCE but ensure proper comparison by using sql template for the comparison value too
+
+        // Find old articles that are NOT saved by any user
+        // Uses LEFT JOIN with NULL check for better performance than NOT IN subquery
         const articlesToDelete = await db
           .select()
           .from(schema.articles)
+          .leftJoin(
+            schema.userArticleStates,
+            and(
+              eq(schema.userArticleStates.articleId, schema.articles.id),
+              eq(schema.userArticleStates.saved, true)
+            )
+          )
           .where(
-            or(
-              // Articles with publishedAt that are older than cutoff
-              lt(schema.articles.publishedAt, cutoffDateForComparison),
-              // Articles without publishedAt but with createdAt older than cutoff
-              and(
-                isNull(schema.articles.publishedAt),
-                lt(schema.articles.createdAt, cutoffDateForComparison)
-              )!
+            and(
+              // Article is old (either by publishedAt or createdAt)
+              or(
+                lt(schema.articles.publishedAt, cutoffDateForComparison),
+                and(
+                  isNull(schema.articles.publishedAt),
+                  lt(schema.articles.createdAt, cutoffDateForComparison)
+                )!
+              )!,
+              // Article is NOT saved by any user (no matching JOIN row)
+              isNull(schema.userArticleStates.articleId)
             )!
           );
 
-        const articleIds = articlesToDelete.map((a) => a.id);
+        const articleIds = articlesToDelete.map((row) => row.articles.id);
 
         if (articleIds.length === 0) {
           console.log("✅ No articles to prune");
@@ -168,7 +181,7 @@ async function _handleArticlePrune(env: Env): Promise<{
         }
 
         console.log(
-          `🗑️ Pruned ${deletedCount} articles older than ${settings.pruneDays} days`
+          `🗑️ Pruned ${deletedCount} articles older than ${settings.pruneDays} days (saved articles excluded)`
         );
 
         // Emit metrics

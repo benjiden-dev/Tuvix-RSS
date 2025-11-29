@@ -506,7 +506,7 @@ export const globalSettings = sqliteTable("global_settings", {
 
   // System settings
   fetchIntervalMinutes: integer("fetch_interval_minutes").notNull().default(60),
-  pruneDays: integer("prune_days").notNull().default(30),
+  pruneDays: integer("prune_days").notNull().default(90),
 
   // Operational timestamps (for Cloudflare Workers)
   lastRssFetchAt: integer("last_rss_fetch_at", { mode: "timestamp" }),
