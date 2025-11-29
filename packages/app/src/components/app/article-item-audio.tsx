@@ -246,6 +246,9 @@ export function ArticleItemAudio({
               {article.description && (
                 <ItemDescription
                   className="text-muted-foreground line-clamp-2 leading-relaxed"
+                  // SECURITY: Safe to use dangerouslySetInnerHTML here because descriptions are
+                  // sanitized at ingestion via sanitize-html library (packages/api/src/services/rss-fetcher.ts:689)
+                  // Only safe HTML tags are allowed (links, formatting), dangerous content is stripped
                   dangerouslySetInnerHTML={{ __html: article.description }}
                 />
               )}
