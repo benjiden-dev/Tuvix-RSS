@@ -39,6 +39,7 @@ import {
 import { normalizeDomain } from "@/utils/domain-checker";
 import { chunkArray, D1_MAX_PARAMETERS } from "@/db/utils";
 import { withQueryMetrics } from "@/utils/db-metrics";
+import { aggregateByDay, calculateStartDate } from "@/utils/admin-metrics";
 
 // User with usage info for admin views
 const AdminUserSchema = z.object({
@@ -1200,33 +1201,19 @@ export const adminRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      const startDate = calculateStartDate(input.days);
 
       const users = await ctx.db
         .select()
         .from(schema.user)
-        .where(gte(schema.user.createdAt, startDate))
-        .then((rows) => rows.map((row) => ({ createdAt: row.createdAt })));
+        .where(gte(schema.user.createdAt, startDate));
 
-      // Group by day
-      const grouped = new Map<string, number>();
-      users.forEach((user) => {
-        const date = new Date(user.createdAt);
-        const dateStr = date.toISOString().split("T")[0];
-        grouped.set(dateStr, (grouped.get(dateStr) || 0) + 1);
-      });
-
-      // Fill in missing days
-      const data: { date: string; count: number }[] = [];
-      for (let i = 0; i < input.days; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
-        data.push({
-          date: dateStr,
-          count: grouped.get(dateStr) || 0,
-        });
-      }
+      const data = aggregateByDay(
+        users,
+        (user) => new Date(user.createdAt),
+        input.days,
+        startDate
+      );
 
       return { data };
     }),
@@ -1251,33 +1238,19 @@ export const adminRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      const startDate = calculateStartDate(input.days);
 
       const sources = await ctx.db
         .select()
         .from(schema.sources)
-        .where(gte(schema.sources.createdAt, startDate))
-        .then((rows) => rows.map((row) => ({ createdAt: row.createdAt })));
+        .where(gte(schema.sources.createdAt, startDate));
 
-      // Group by day
-      const grouped = new Map<string, number>();
-      sources.forEach((source) => {
-        const date = new Date(source.createdAt);
-        const dateStr = date.toISOString().split("T")[0];
-        grouped.set(dateStr, (grouped.get(dateStr) || 0) + 1);
-      });
-
-      // Fill in missing days
-      const data: { date: string; count: number }[] = [];
-      for (let i = 0; i < input.days; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
-        data.push({
-          date: dateStr,
-          count: grouped.get(dateStr) || 0,
-        });
-      }
+      const data = aggregateByDay(
+        sources,
+        (source) => new Date(source.createdAt),
+        input.days,
+        startDate
+      );
 
       return { data };
     }),
@@ -1374,33 +1347,19 @@ export const adminRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      const startDate = calculateStartDate(input.days);
 
       const logs = await ctx.db
         .select()
         .from(schema.publicFeedAccessLog)
-        .where(gte(schema.publicFeedAccessLog.accessedAt, startDate))
-        .then((rows) => rows.map((row) => ({ accessedAt: row.accessedAt })));
+        .where(gte(schema.publicFeedAccessLog.accessedAt, startDate));
 
-      // Group by day
-      const grouped = new Map<string, number>();
-      logs.forEach((log) => {
-        const date = new Date(log.accessedAt);
-        const dateStr = date.toISOString().split("T")[0];
-        grouped.set(dateStr, (grouped.get(dateStr) || 0) + 1);
-      });
-
-      // Fill in missing days
-      const data: { date: string; count: number }[] = [];
-      for (let i = 0; i < input.days; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
-        data.push({
-          date: dateStr,
-          count: grouped.get(dateStr) || 0,
-        });
-      }
+      const data = aggregateByDay(
+        logs,
+        (log) => new Date(log.accessedAt),
+        input.days,
+        startDate
+      );
 
       return { data };
     }),
@@ -1431,18 +1390,12 @@ export const adminRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      const startDate = calculateStartDate(input.days);
 
       const logs = await ctx.db
         .select()
         .from(schema.apiUsageLog)
-        .where(gte(schema.apiUsageLog.createdAt, startDate))
-        .then((rows) =>
-          rows.map((row) => ({
-            endpoint: row.endpoint,
-            createdAt: row.createdAt,
-          }))
-        );
+        .where(gte(schema.apiUsageLog.createdAt, startDate));
 
       // Group by endpoint
       const endpointCounts = new Map<string, number>();
@@ -1453,25 +1406,13 @@ export const adminRouter = router({
         );
       });
 
-      // Group by day
-      const timeGrouped = new Map<string, number>();
-      logs.forEach((log) => {
-        const date = new Date(log.createdAt);
-        const dateStr = date.toISOString().split("T")[0];
-        timeGrouped.set(dateStr, (timeGrouped.get(dateStr) || 0) + 1);
-      });
-
-      // Fill in missing days
-      const overTime: { date: string; count: number }[] = [];
-      for (let i = 0; i < input.days; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
-        overTime.push({
-          date: dateStr,
-          count: timeGrouped.get(dateStr) || 0,
-        });
-      }
+      // Use shared aggregation for overTime
+      const overTime = aggregateByDay(
+        logs,
+        (log) => new Date(log.createdAt),
+        input.days,
+        startDate
+      );
 
       // Sort endpoints by count and take top 10
       const byEndpoint = Array.from(endpointCounts.entries())
@@ -1575,33 +1516,19 @@ export const adminRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      const startDate = calculateStartDate(input.days);
 
       const subscriptions = await ctx.db
         .select()
         .from(schema.subscriptions)
-        .where(gte(schema.subscriptions.createdAt, startDate))
-        .then((rows) => rows.map((row) => ({ createdAt: row.createdAt })));
+        .where(gte(schema.subscriptions.createdAt, startDate));
 
-      // Group by day
-      const grouped = new Map<string, number>();
-      subscriptions.forEach((subscription) => {
-        const date = new Date(subscription.createdAt);
-        const dateStr = date.toISOString().split("T")[0];
-        grouped.set(dateStr, (grouped.get(dateStr) || 0) + 1);
-      });
-
-      // Fill in missing days
-      const data: { date: string; count: number }[] = [];
-      for (let i = 0; i < input.days; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
-        data.push({
-          date: dateStr,
-          count: grouped.get(dateStr) || 0,
-        });
-      }
+      const data = aggregateByDay(
+        subscriptions,
+        (subscription) => new Date(subscription.createdAt),
+        input.days,
+        startDate
+      );
 
       return { data };
     }),
@@ -1626,7 +1553,7 @@ export const adminRouter = router({
       })
     )
     .query(async ({ ctx, input }) => {
-      const startDate = new Date(Date.now() - input.days * 24 * 60 * 60 * 1000);
+      const startDate = calculateStartDate(input.days);
 
       const readStates = await ctx.db
         .select()
@@ -1636,28 +1563,14 @@ export const adminRouter = router({
             eq(schema.userArticleStates.read, true),
             gte(schema.userArticleStates.updatedAt, startDate)
           )
-        )
-        .then((rows) => rows.map((row) => ({ updatedAt: row.updatedAt })));
+        );
 
-      // Group by day
-      const grouped = new Map<string, number>();
-      readStates.forEach((state) => {
-        const date = new Date(state.updatedAt);
-        const dateStr = date.toISOString().split("T")[0];
-        grouped.set(dateStr, (grouped.get(dateStr) || 0) + 1);
-      });
-
-      // Fill in missing days
-      const data: { date: string; count: number }[] = [];
-      for (let i = 0; i < input.days; i++) {
-        const date = new Date(startDate);
-        date.setDate(date.getDate() + i);
-        const dateStr = date.toISOString().split("T")[0];
-        data.push({
-          date: dateStr,
-          count: grouped.get(dateStr) || 0,
-        });
-      }
+      const data = aggregateByDay(
+        readStates,
+        (state) => new Date(state.updatedAt),
+        input.days,
+        startDate
+      );
 
       return { data };
     }),

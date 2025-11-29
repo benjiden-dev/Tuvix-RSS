@@ -9,6 +9,7 @@ import {
   slugExists,
   categoryNameExists,
   updateManyToMany,
+  upsertArticleState,
 } from "../helpers";
 import {
   createTestDb,
@@ -17,9 +18,10 @@ import {
   seedTestSource,
   seedTestSubscription,
   seedTestCategory,
+  seedTestArticle,
 } from "@/test/setup";
 import * as schema from "../schema";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 describe("Database Helpers", () => {
   let db!: NonNullable<ReturnType<typeof createTestDb>>;
@@ -485,6 +487,123 @@ describe("Database Helpers", () => {
 
       expect(links2).toHaveLength(1);
       expect(links2[0].categoryId).toBe(category2.id);
+    });
+  });
+
+  describe("upsertArticleState", () => {
+    it("should create new article state when none exists", async () => {
+      const { user } = await seedTestUser(db);
+      const source = await seedTestSource(db);
+      const article = await seedTestArticle(db, source.id);
+
+      await upsertArticleState(db, user.id, article.id, { read: true });
+
+      const [state] = await db
+        .select()
+        .from(schema.userArticleStates)
+        .where(
+          and(
+            eq(schema.userArticleStates.userId, user.id),
+            eq(schema.userArticleStates.articleId, article.id)
+          )
+        );
+
+      expect(state).toBeDefined();
+      expect(state.read).toBe(true);
+      expect(state.saved).toBe(false);
+    });
+
+    it("should update existing article state preserving other fields", async () => {
+      const { user } = await seedTestUser(db);
+      const source = await seedTestSource(db);
+      const article = await seedTestArticle(db, source.id);
+
+      // First, mark as read
+      await upsertArticleState(db, user.id, article.id, { read: true });
+      // Then, save it
+      await upsertArticleState(db, user.id, article.id, { saved: true });
+
+      const [state] = await db
+        .select()
+        .from(schema.userArticleStates)
+        .where(
+          and(
+            eq(schema.userArticleStates.userId, user.id),
+            eq(schema.userArticleStates.articleId, article.id)
+          )
+        );
+
+      // Both should be true - read was preserved when saved was updated
+      expect(state.read).toBe(true);
+      expect(state.saved).toBe(true);
+    });
+
+    it("should toggle read status off", async () => {
+      const { user } = await seedTestUser(db);
+      const source = await seedTestSource(db);
+      const article = await seedTestArticle(db, source.id);
+
+      // Mark as read, then unread
+      await upsertArticleState(db, user.id, article.id, { read: true });
+      await upsertArticleState(db, user.id, article.id, { read: false });
+
+      const [state] = await db
+        .select()
+        .from(schema.userArticleStates)
+        .where(
+          and(
+            eq(schema.userArticleStates.userId, user.id),
+            eq(schema.userArticleStates.articleId, article.id)
+          )
+        );
+
+      expect(state.read).toBe(false);
+    });
+
+    it("should handle multiple users independently", async () => {
+      const { user: user1 } = await seedTestUser(db, {
+        username: "user1",
+        email: "user1@example.com",
+      });
+      const { user: user2 } = await seedTestUser(db, {
+        username: "user2",
+        email: "user2@example.com",
+      });
+      const source = await seedTestSource(db);
+      const article = await seedTestArticle(db, source.id);
+
+      // User1 marks as read and saved
+      await upsertArticleState(db, user1.id, article.id, {
+        read: true,
+        saved: true,
+      });
+      // User2 marks only as saved
+      await upsertArticleState(db, user2.id, article.id, { saved: true });
+
+      const [state1] = await db
+        .select()
+        .from(schema.userArticleStates)
+        .where(
+          and(
+            eq(schema.userArticleStates.userId, user1.id),
+            eq(schema.userArticleStates.articleId, article.id)
+          )
+        );
+
+      const [state2] = await db
+        .select()
+        .from(schema.userArticleStates)
+        .where(
+          and(
+            eq(schema.userArticleStates.userId, user2.id),
+            eq(schema.userArticleStates.articleId, article.id)
+          )
+        );
+
+      expect(state1.read).toBe(true);
+      expect(state1.saved).toBe(true);
+      expect(state2.read).toBe(false);
+      expect(state2.saved).toBe(true);
     });
   });
 });

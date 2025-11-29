@@ -9,6 +9,8 @@ import { TRPCError } from "@trpc/server";
 import { eq, and, sql, type SQL } from "drizzle-orm";
 import type { Database } from "@/db/client";
 import type { SQLiteTable, SQLiteColumn } from "drizzle-orm/sqlite-core";
+import * as schema from "@/db/schema";
+import { withQueryMetrics } from "@/utils/db-metrics";
 
 /**
  * Verify user owns a resource, throw NOT_FOUND if not
@@ -281,5 +283,117 @@ export async function updateManyToMany(
     }));
 
     await db.insert(linkTable).values(links);
+  }
+}
+
+/**
+ * Options for upserting article state
+ */
+export interface ArticleStateUpdate {
+  read?: boolean;
+  saved?: boolean;
+}
+
+/**
+ * Options for metrics tracking in article state operations
+ */
+export interface ArticleStateMetricsOptions {
+  /** Optional operation name prefix for metrics (e.g., "articles.markRead") */
+  operationName?: string;
+}
+
+/**
+ * Upsert user article state (read/saved status)
+ *
+ * Preserves existing `read` and `saved` flags when not explicitly updated.
+ * Uses database upsert to handle both insert and update cases.
+ * Includes database query metrics when operationName is provided.
+ *
+ * **Note:** This function only manages `read` and `saved` fields. Audio-related
+ * fields (`audioPosition`, `audioDuration`, `audioCompletedAt`, `audioLastPlayedAt`)
+ * are NOT preserved by this function and should be managed separately via the
+ * dedicated audio progress endpoints.
+ *
+ * @param db Database instance
+ * @param userId User ID
+ * @param articleId Article ID
+ * @param updates State updates (read and/or saved)
+ * @param options Optional metrics options
+ * @returns Promise that resolves when update is complete
+ *
+ * @example
+ * // Mark as read with metrics
+ * await upsertArticleState(ctx.db, userId, articleId, { read: true }, { operationName: "articles.markRead" });
+ *
+ * // Toggle saved status without metrics
+ * await upsertArticleState(ctx.db, userId, articleId, { saved: true });
+ */
+export async function upsertArticleState(
+  db: Database,
+  userId: number,
+  articleId: number,
+  updates: ArticleStateUpdate,
+  options?: ArticleStateMetricsOptions
+): Promise<void> {
+  // Get existing state to preserve other flags
+  const selectQuery = async () =>
+    db
+      .select()
+      .from(schema.userArticleStates)
+      .where(
+        and(
+          eq(schema.userArticleStates.userId, userId),
+          eq(schema.userArticleStates.articleId, articleId)
+        )
+      )
+      .limit(1);
+
+  const existing = options?.operationName
+    ? await withQueryMetrics(`${options.operationName}.getState`, selectQuery, {
+        "db.table": "user_article_states",
+        "db.operation": "select",
+        "db.user_id": userId,
+      })
+    : await selectQuery();
+
+  const currentRead = existing[0]?.read ?? false;
+  const currentSaved = existing[0]?.saved ?? false;
+
+  const newRead = updates.read !== undefined ? updates.read : currentRead;
+  const newSaved = updates.saved !== undefined ? updates.saved : currentSaved;
+
+  // Build the set clause for updates (only include fields being changed)
+  const setClause: Partial<typeof schema.userArticleStates.$inferInsert> = {
+    updatedAt: new Date(),
+  };
+  if (updates.read !== undefined) setClause.read = updates.read;
+  if (updates.saved !== undefined) setClause.saved = updates.saved;
+
+  const executeUpsert = async () =>
+    db
+      .insert(schema.userArticleStates)
+      .values({
+        userId,
+        articleId,
+        read: newRead,
+        saved: newSaved,
+      })
+      .onConflictDoUpdate({
+        target: [
+          schema.userArticleStates.userId,
+          schema.userArticleStates.articleId,
+        ],
+        set: setClause,
+      });
+
+  if (options?.operationName) {
+    await withQueryMetrics(`${options.operationName}.upsert`, executeUpsert, {
+      "db.table": "user_article_states",
+      "db.operation": "upsert",
+      "db.user_id": userId,
+      "db.had_existing_state": existing.length > 0,
+    });
+  } else {
+    await executeUpsert();
   }
 }
