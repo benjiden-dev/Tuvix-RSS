@@ -69,8 +69,8 @@ See `env.example` for all options.
 
 - **[Documentation Index](./docs/README.md)** - Complete guide
 - **[Deployment Guide](./docs/deployment.md)** - Docker & Cloudflare Workers
-- **[tRPC API Architecture](./docs/trpc-api-architecture.md)** - API reference
-- **[Project Integration](./docs/project-integration.md)** - Frontend-backend guide
+- **[tRPC API Architecture](./docs/developer/trpc-api-architecture.md)** - API reference
+- **[Project Integration](./docs/developer/project-integration.md)** - Frontend-backend guide
 
 ---
 
