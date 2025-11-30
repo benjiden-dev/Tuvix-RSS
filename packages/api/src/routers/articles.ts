@@ -853,18 +853,46 @@ export const articlesRouter = router({
       })
     )
     .mutation(async ({ ctx }) => {
-      // Import RSS fetcher
+      // Import RSS fetcher and Sentry
       const { fetchAllFeeds } = await import("../services/rss-fetcher");
+      const Sentry = await import("@/utils/sentry");
 
       // Trigger fetch in background (don't await)
+      // Wrap in Sentry span for tracing
       fetchAllFeeds(ctx.db)
         .then((result) => {
           console.log(
             `Feed refresh completed: ${result.successCount} succeeded, ${result.errorCount} failed`
           );
+
+          // Capture errors as breadcrumbs if any feeds failed
+          if (result.errorCount > 0) {
+            Sentry.addBreadcrumb({
+              category: "rss.fetch",
+              message: `RSS fetch completed with ${result.errorCount} errors`,
+              level: "warning",
+              data: {
+                success_count: result.successCount,
+                error_count: result.errorCount,
+                errors: result.errors.slice(0, 5), // First 5 errors
+              },
+            });
+          }
         })
         .catch((error) => {
           console.error("Feed refresh failed:", error);
+
+          // Capture unexpected errors to Sentry
+          Sentry.captureException(error, {
+            level: "error",
+            tags: {
+              operation: "articles_refresh",
+              context: "background_fetch",
+            },
+            extra: {
+              user_id: ctx.user.userId,
+            },
+          });
         });
 
       return {
