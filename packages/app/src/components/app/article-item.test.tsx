@@ -5,10 +5,14 @@ import { render } from "@/test/test-utils";
 import { ArticleItem } from "./article-item";
 import * as useArticlesModule from "@/lib/hooks/useArticles";
 import * as useMobileHook from "@/hooks/use-mobile";
+import type { RouterOutputs } from "@/lib/api/trpc";
 
 // Mock the hooks
 vi.mock("@/lib/hooks/useArticles");
 vi.mock("@/hooks/use-mobile");
+
+// Get the actual article type from tRPC router output (matches component's type)
+type Article = RouterOutputs["articles"]["list"]["items"][number];
 
 describe("ArticleItem", () => {
   const mockMarkRead = vi.fn();
@@ -16,23 +20,36 @@ describe("ArticleItem", () => {
   const mockSaveArticle = vi.fn();
   const mockUnsaveArticle = vi.fn();
 
-  const mockArticle = {
+  const mockArticle: Article = {
     id: 1,
+    sourceId: 1,
+    guid: "test-guid",
     title: "Test Article Title",
     description: "This is a test article description",
     link: "https://example.com/article",
+    content: null,
     publishedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
+    createdAt: new Date().toISOString(),
     author: "Test Author",
     read: false,
     saved: false,
     imageUrl: "https://example.com/image.jpg",
+    audioUrl: null,
+    audioProgress: null,
     source: {
       id: 1,
-      title: "Test Source",
       url: "https://example.com",
+      title: "Test Source",
+      description: null,
+      siteUrl: null,
       iconUrl: "https://example.com/icon.png",
+      iconType: "auto",
+      iconUpdatedAt: null,
+      lastFetched: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     },
-  } as any;
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
