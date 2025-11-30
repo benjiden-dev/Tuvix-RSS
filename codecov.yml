@@ -1,0 +1,64 @@
+# Codecov configuration for TuvixRSS monorepo
+# https://docs.codecov.com/docs/codecov-yaml
+
+# Coverage reporting settings
+coverage:
+  precision: 2
+  round: down
+  range: "50...100"
+
+  # Overall project coverage status
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+
+    patch:
+      default:
+        target: auto
+        threshold: 1%
+        base: auto
+
+# Individual flag settings for API and App
+flag_management:
+  default_rules:
+    carryforward: true
+
+  individual_flags:
+    - name: api
+      paths:
+        - packages/api/src/
+      carryforward: true
+
+    - name: app
+      paths:
+        - packages/app/src/
+      carryforward: true
+
+# Comment configuration for PRs
+comment:
+  layout: "reach,diff,flags,tree"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+
+# Ignore patterns
+ignore:
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/__tests__/**"
+  - "**/test/**"
+  - "**/*.config.*"
+  - "**/dist/**"
+  - "**/node_modules/**"
+  - "packages/api/drizzle/**"
+  - "packages/api/cli/**"
+  - "packages/api/adapters/**"
+  - "packages/app/src/routeTree.gen.ts"
+  - "packages/app/src/components/ui/**"
+  - "scripts/**"

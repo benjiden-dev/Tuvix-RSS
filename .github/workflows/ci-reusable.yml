@@ -108,10 +108,11 @@ jobs:
           path: packages/api/coverage
           retention-days: ${{ inputs.coverage_retention_days }}
 
-      - name: Upload API coverage to GitHub
+      - name: Upload API coverage to Codecov
         if: ${{ inputs.upload_coverage }}
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: packages/api/coverage/lcov.info
           flags: api
           name: api-coverage
@@ -141,10 +142,11 @@ jobs:
           path: packages/app/coverage
           retention-days: ${{ inputs.coverage_retention_days }}
 
-      - name: Upload App coverage to GitHub
+      - name: Upload App coverage to Codecov
         if: ${{ inputs.upload_coverage }}
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
           files: packages/app/coverage/lcov.info
           flags: app
           name: app-coverage
