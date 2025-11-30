@@ -5,7 +5,6 @@ import { render } from "@/test/test-utils";
 import { ArticleItem } from "./article-item";
 import * as useArticlesModule from "@/lib/hooks/useArticles";
 import * as useMobileHook from "@/hooks/use-mobile";
-import type { ModelsArticle } from "@/lib/api/generated/types.gen";
 
 // Mock the hooks
 vi.mock("@/lib/hooks/useArticles");
@@ -17,7 +16,7 @@ describe("ArticleItem", () => {
   const mockSaveArticle = vi.fn();
   const mockUnsaveArticle = vi.fn();
 
-  const mockArticle: ModelsArticle = {
+  const mockArticle = {
     id: 1,
     title: "Test Article Title",
     description: "This is a test article description",
@@ -33,7 +32,7 @@ describe("ArticleItem", () => {
       url: "https://example.com",
       iconUrl: "https://example.com/icon.png",
     },
-  };
+  } as any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -129,6 +128,31 @@ describe("ArticleItem", () => {
       expect(link).toHaveAttribute(
         "href",
         "https://news.ycombinator.com/item?id=12345",
+      );
+    });
+
+    it("clicking links in description does not trigger card click on mobile", async () => {
+      vi.mocked(useMobileHook.useIsMobile).mockReturnValue(true);
+      const user = userEvent.setup();
+
+      const articleWithHNLink = {
+        ...mockArticle,
+        link: "https://example.com/article",
+        description:
+          'Article text. <a href="https://news.ycombinator.com/item?id=12345" target="_blank" rel="noopener noreferrer">Comments</a>',
+      };
+      render(<ArticleItem article={articleWithHNLink} />);
+
+      // Click the Comments link inside the description
+      const commentsLink = screen.getByRole("link", { name: "Comments" });
+      await user.click(commentsLink);
+
+      // Verify that window.open was NOT called with the article link
+      // The link's default behavior should handle navigation to the comments URL
+      expect(window.open).not.toHaveBeenCalledWith(
+        "https://example.com/article",
+        "_blank",
+        "noopener,noreferrer",
       );
     });
 
@@ -305,13 +329,13 @@ describe("ArticleItem", () => {
   });
 
   it("renders fallback text for missing data", () => {
-    const incompleteArticle: ModelsArticle = {
+    const incompleteArticle = {
       id: 1,
       title: undefined,
       description: undefined,
       publishedAt: undefined,
       source: undefined,
-    };
+    } as any;
 
     render(<ArticleItem article={incompleteArticle} />);
 
