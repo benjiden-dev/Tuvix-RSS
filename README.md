@@ -2,6 +2,9 @@
 
 **Take back your feed.**
 
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+
+
 Tuvix is a modern RSS aggregator that helps you follow all your favorite blogs, podcasts, and news sources in one place. It's not a social network, it's not an algorithmic feed, it's just old-fashioned RSS.
 
 <div align="center">
@@ -76,14 +79,43 @@ See `env.example` for all options.
 
 ## 🤝 Contributing
 
+We welcome contributions from the community! Whether you're fixing bugs, adding features, or improving documentation, your help is appreciated.
+
+### Quick Start for Contributors
+
 1. Fork the repository
 2. Checkout the `dev` branch: `git checkout dev`
 3. Create your feature branch: `git checkout -b feature/amazing-feature`
-4. Commit your changes: `git commit -m 'Add amazing feature'`
-5. Push to the branch: `git push origin feature/amazing-feature`
-6. Open a Pull Request targeting the `dev` branch
+4. Make your changes and test them
+5. Commit using [conventional commits](https://www.conventionalcommits.org/): `git commit -m 'feat: add amazing feature'`
+6. Push to your fork: `git push origin feature/amazing-feature`
+7. Open a Pull Request targeting the `dev` branch
 
-See the [developer documentation](./docs/developer/) for detailed contributor guidelines.
+### Before Contributing
+
+- Read our [Contributing Guide](CONTRIBUTING.md) for detailed guidelines
+- Check out our [Code of Conduct](CODE_OF_CONDUCT.md)
+- Browse [existing issues](https://github.com/TechSquidTV/Tuvix-RSS/issues) or create a new one
+- Join our community discussions
+
+### Good First Issues
+
+New to the project? Look for issues tagged with `good first issue` to get started!
+
+### Development Setup
+
+```bash
+git clone https://github.com/YOUR_USERNAME/Tuvix-RSS.git
+cd Tuvix-RSS
+git checkout dev
+pnpm install
+cp env.example .env
+# Edit .env and set BETTER_AUTH_SECRET (generate: openssl rand -base64 32)
+pnpm run db:migrate
+pnpm run dev
+```
+
+See the [Contributing Guide](CONTRIBUTING.md) and [developer documentation](./docs/developer/) for more details.
 
 ---
 
