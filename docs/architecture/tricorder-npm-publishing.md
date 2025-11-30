@@ -13,7 +13,7 @@ The `@tuvixrss/tricorder` package is published independently to NPM to enable us
 
 - **NPM Package**: `@tuvixrss/tricorder`
 - **NPM URL**: https://www.npmjs.com/package/@tuvixrss/tricorder
-- **Current Version**: 1.0.0
+- **Current Version**: 0.1.0
 - **Scope Owner**: `@tuvixrss` organization on NPM
 
 ## Publishing Strategy
@@ -155,7 +155,7 @@ git push origin main --tags
 ```json
 {
   "name": "@tuvixrss/tricorder",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
