@@ -55,8 +55,8 @@ async function createRecoloredSvg(svgPath, primaryColor, secondaryColor) {
   const svgContent = await readFile(svgPath, "utf-8");
 
   // Convert RGB colors to hex
-  const primaryHex = `#${primaryColor.r.toString(16).padStart(2, '0')}${primaryColor.g.toString(16).padStart(2, '0')}${primaryColor.b.toString(16).padStart(2, '0')}`;
-  const secondaryHex = `#${secondaryColor.r.toString(16).padStart(2, '0')}${secondaryColor.g.toString(16).padStart(2, '0')}${secondaryColor.b.toString(16).padStart(2, '0')}`;
+  const primaryHex = `#${primaryColor.r.toString(16).padStart(2, "0")}${primaryColor.g.toString(16).padStart(2, "0")}${primaryColor.b.toString(16).padStart(2, "0")}`;
+  const secondaryHex = `#${secondaryColor.r.toString(16).padStart(2, "0")}${secondaryColor.g.toString(16).padStart(2, "0")}${secondaryColor.b.toString(16).padStart(2, "0")}`;
 
   // Replace colors in SVG:
   // #231f20 (dark/black) → logo-primary (light gray)
@@ -219,7 +219,7 @@ async function generateIcons() {
   const recoloredSvg = await createRecoloredSvg(
     logoPath,
     LOGO_PRIMARY_COLOR,
-    LOGO_SECONDARY_COLOR
+    LOGO_SECONDARY_COLOR,
   );
   console.log("  ✓ Logo recolored with sign-in page theme\n");
 
@@ -240,7 +240,12 @@ async function generateIcons() {
   console.log("\n🎭 Generating maskable icons (with safe zone):");
   for (const { size, name } of maskableIcons) {
     try {
-      await generateMaskableIcon(recoloredSvg, join(iconsDir, name), size, bgColor);
+      await generateMaskableIcon(
+        recoloredSvg,
+        join(iconsDir, name),
+        size,
+        bgColor,
+      );
       console.log(`  ✓ ${name} (${size}x${size}, 80% safe zone)`);
     } catch (error) {
       console.error(`  ✗ Failed to generate ${name}:`, error.message);
@@ -261,7 +266,11 @@ async function generateIcons() {
   // Generate favicon.ico
   console.log("\n🔖 Generating favicon:");
   try {
-    await generateFavicon(recoloredSvg, join(publicDir, "favicon.ico"), bgColor);
+    await generateFavicon(
+      recoloredSvg,
+      join(publicDir, "favicon.ico"),
+      bgColor,
+    );
     console.log("  ✓ favicon.ico (multi-size PNG format)");
   } catch (error) {
     console.error("  ✗ Failed to generate favicon.ico:", error.message);

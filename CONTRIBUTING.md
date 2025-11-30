@@ -61,6 +61,7 @@ pnpm run dev
 ```
 
 Visit:
+
 - App: http://localhost:5173
 - API: http://localhost:3001
 
@@ -82,6 +83,7 @@ See [Project Integration Guide](./docs/developer/project-integration.md) for det
 ### Reporting Bugs
 
 Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.yml) to report bugs. Include:
+
 - Clear description of the issue
 - Steps to reproduce
 - Expected vs actual behavior
@@ -90,6 +92,7 @@ Use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.yml) to report b
 ### Suggesting Features
 
 Use the [Feature Request template](.github/ISSUE_TEMPLATE/feature_request.yml) to suggest features. Include:
+
 - Clear description of the feature
 - Use case and benefits
 - Possible implementation approach
@@ -241,6 +244,7 @@ pnpm run test:watch
 ### When to Update Docs
 
 Update documentation when:
+
 - Adding new features
 - Changing API behavior
 - Modifying configuration
