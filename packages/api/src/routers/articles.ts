@@ -342,21 +342,20 @@ export const articlesRouter = router({
       } else {
         // FILTERED PATH: Has subscription filters, must fetch more and filter
         // NOTE: Cursor-based pagination is incompatible with post-query filtering
-        // because the cursor (last article ID) may not align with filtered results.
-        // We use offset-based pagination here, fetching extra rows to account for filtering.
+        // because the cursor represents items seen by frontend (after filtering),
+        // but the backend offset operates on items before filtering.
+        // We ONLY use offset-based pagination here to avoid skipping articles.
         const fetchLimit = Math.max(input.limit * 3, 100);
 
         // Always order by publishedAt for chronological feed
-        // Use cursor as offset for infinite scroll (tRPC sends pageParam as cursor)
         let paginationQuery = queryBuilder.orderBy(
           desc(schema.articles.publishedAt)
         );
 
-        // Use cursor OR offset (cursor takes precedence for infinite scroll)
-        const effectiveOffset = input.cursor ?? input.offset ?? 0;
-
-        if (effectiveOffset > 0) {
-          paginationQuery = paginationQuery.offset(effectiveOffset);
+        // IMPORTANT: Only use explicit offset parameter, ignore cursor
+        // When subscription filters are active, cursor values don't align with database offsets
+        if (input.offset > 0) {
+          paginationQuery = paginationQuery.offset(input.offset);
         }
 
         const results = await withQueryMetrics(

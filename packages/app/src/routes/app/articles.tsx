@@ -164,6 +164,9 @@ function ArticlesPage() {
   // Update filter when userSettings changes after initial mount
   // BUT only if the user hasn't manually changed the filter
   const prevDefaultFilterRef = useRef(userSettings?.defaultFilter);
+  // NOTE: This ref persists across remounts within the same session
+  // This is intentional - once a user manually selects a filter, we respect that choice
+  // even if they navigate away and come back, until the page is refreshed
   const hasUserChangedFilterRef = useRef(false);
 
   useEffect(() => {
@@ -279,14 +282,7 @@ function ArticlesPage() {
         isFetchingRef.current = false;
       });
     }
-  }, [
-    inView,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-    articles.length,
-    data,
-  ]);
+  }, [inView, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   const handleRefresh = () => {
     refreshFeeds.mutate();

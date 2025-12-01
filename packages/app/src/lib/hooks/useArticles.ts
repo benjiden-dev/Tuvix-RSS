@@ -55,14 +55,16 @@ export const useInfiniteArticles = (filters?: {
           return undefined;
         }
 
-        // Calculate the offset for the next page
-        const totalFetched = allPages.reduce(
-          (sum, page) => sum + page.items.length,
-          0,
-        );
+        // Calculate offset based on UNIQUE article IDs to avoid skipping articles
+        // This is critical because deduplication in select() removes duplicates,
+        // but pagination offset must be based on unique items actually rendered
+        const uniqueIds = new Set<number>();
+        allPages.forEach((page) => {
+          page.items.forEach((article) => uniqueIds.add(article.id));
+        });
 
         // tRPC automatically sends this as 'cursor' parameter
-        return totalFetched;
+        return uniqueIds.size;
       },
       initialPageParam: 0,
       staleTime: 1000 * 60 * 5, // 5 minutes - data is fresh for this long
