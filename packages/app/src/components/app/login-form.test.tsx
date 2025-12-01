@@ -5,6 +5,15 @@ import { render } from "@/test/test-utils";
 import { LoginForm } from "./login-form";
 import * as useAuthModule from "@/lib/hooks/useAuth";
 
+// Mock TanStack Router Link component
+vi.mock("@tanstack/react-router", () => ({
+  Link: ({ to, children, ...props }: any) => (
+    <a href={to} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
 // Mock the useLogin hook
 vi.mock("@/lib/hooks/useAuth", () => ({
   useLogin: vi.fn(),
