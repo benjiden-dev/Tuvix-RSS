@@ -248,19 +248,23 @@ export const useCreateSubscriptionWithRefetch = () => {
 
         // After threshold, capture Sentry warning and update UI
         if (attemptsRef.current === SLOW_FETCH_THRESHOLD) {
-          // Capture Sentry warning for slow fetch
-          Sentry.captureMessage("RSS fetch taking longer than expected", {
-            level: "warning",
-            tags: {
-              operation: "subscription_create",
-              feed_url: input.url,
-            },
-            extra: {
-              source_id: sourceId,
-              poll_attempts: attemptsRef.current,
-              elapsed_seconds: attemptsRef.current * 2,
-            },
-          });
+          // Capture Sentry warning for slow fetch (safely handle if Sentry not initialized)
+          try {
+            Sentry.captureMessage("RSS fetch taking longer than expected", {
+              level: "warning",
+              tags: {
+                operation: "subscription_create",
+                feed_url: input.url,
+              },
+              extra: {
+                source_id: sourceId,
+                poll_attempts: attemptsRef.current,
+                elapsed_seconds: attemptsRef.current * 2,
+              },
+            });
+          } catch {
+            // Sentry not available - silently ignore
+          }
 
           toast.info("Taking longer than usual. Articles will appear soon...");
         }
