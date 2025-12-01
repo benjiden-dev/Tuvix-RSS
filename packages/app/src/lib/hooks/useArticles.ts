@@ -12,6 +12,8 @@ type InfiniteArticlesData = {
       saved: boolean;
       source?: { id: number };
     }>;
+    total: number;
+    hasMore: boolean;
   }>;
   pageParams: unknown[];
 };

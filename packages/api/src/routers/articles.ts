@@ -854,20 +854,26 @@ export const articlesRouter = router({
       })
     )
     .mutation(async ({ ctx }) => {
-      // Import RSS fetcher and Sentry
+      // Import RSS fetcher (required)
       const { fetchAllFeeds } = await import("../services/rss-fetcher");
-      const Sentry = await import("@/utils/sentry");
+
+      // Import Sentry (optional - gracefully handle if unavailable)
+      let Sentry: typeof import("@/utils/sentry") | null = null;
+      try {
+        Sentry = await import("@/utils/sentry");
+      } catch (error) {
+        console.warn("Sentry unavailable, continuing without monitoring:", error);
+      }
 
       // Trigger fetch in background (don't await)
-      // Wrap in Sentry span for tracing
       fetchAllFeeds(ctx.db)
         .then((result) => {
           console.log(
             `Feed refresh completed: ${result.successCount} succeeded, ${result.errorCount} failed`
           );
 
-          // Capture errors as breadcrumbs if any feeds failed
-          if (result.errorCount > 0) {
+          // Capture errors as breadcrumbs if any feeds failed (only if Sentry available)
+          if (Sentry && result.errorCount > 0) {
             Sentry.addBreadcrumb({
               category: "rss.fetch",
               message: `RSS fetch completed with ${result.errorCount} errors`,
@@ -883,17 +889,19 @@ export const articlesRouter = router({
         .catch((error) => {
           console.error("Feed refresh failed:", error);
 
-          // Capture unexpected errors to Sentry
-          Sentry.captureException(error, {
-            level: "error",
-            tags: {
-              operation: "articles_refresh",
-              context: "background_fetch",
-            },
-            extra: {
-              user_id: ctx.user.userId,
-            },
-          });
+          // Capture unexpected errors to Sentry (only if Sentry available)
+          if (Sentry) {
+            Sentry.captureException(error, {
+              level: "error",
+              tags: {
+                operation: "articles_refresh",
+                context: "background_fetch",
+              },
+              extra: {
+                user_id: ctx.user.userId,
+              },
+            });
+          }
         });
 
       return {

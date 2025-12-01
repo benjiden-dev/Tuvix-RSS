@@ -12,6 +12,8 @@ type InfiniteArticlesData = {
     items: Array<{
       source?: { id: number };
     }>;
+    total: number;
+    hasMore: boolean;
   }>;
   pageParams: unknown[];
 };
@@ -123,7 +125,7 @@ export const useCreateSubscriptionWithRefetch = () => {
   useEffect(() => {
     return () => {
       if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
+        clearTimeout(pollIntervalRef.current);
       }
     };
   }, []);
@@ -154,6 +156,12 @@ export const useCreateSubscriptionWithRefetch = () => {
     try {
       // Create subscription and get the source ID
       const subscription = await createSubscription.mutateAsync(input);
+
+      // Validate that we have a source ID before proceeding
+      if (!subscription.source?.id) {
+        throw new Error("Subscription created but source ID is missing");
+      }
+
       const sourceId = subscription.source.id;
 
       // Get initial article count for this source
