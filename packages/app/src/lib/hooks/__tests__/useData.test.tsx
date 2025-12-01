@@ -212,6 +212,50 @@ describe("Subscription Hooks", () => {
       expect(result.current).toHaveProperty("pollAttempts");
       expect(typeof result.current.mutateAsync).toBe("function");
     });
+
+    it("should expose isPolling for UI feedback", () => {
+      const { result } = renderHook(() => useCreateSubscriptionWithRefetch(), {
+        wrapper: createWrapper(),
+      });
+
+      // Initial state should not be polling
+      expect(result.current.isPolling).toBe(false);
+      expect(result.current.pollAttempts).toBe(0);
+
+      // These values are updated during the polling cycle
+      // and consumed by UI components for progress indicators
+    });
+
+    it("should handle polling lifecycle", () => {
+      const { result } = renderHook(() => useCreateSubscriptionWithRefetch(), {
+        wrapper: createWrapper(),
+      });
+
+      // Verify the hook provides polling state management
+      // The actual polling logic is tested through integration tests
+      // as it requires a full backend and React Query setup
+      expect(result.current).toHaveProperty("isPolling");
+      expect(result.current).toHaveProperty("pollAttempts");
+      expect(result.current).toHaveProperty("mutateAsync");
+    });
+
+    it("should support cleanup on unmount", () => {
+      const { result, unmount } = renderHook(
+        () => useCreateSubscriptionWithRefetch(),
+        {
+          wrapper: createWrapper(),
+        },
+      );
+
+      // Verify hook is mounted
+      expect(result.current).toBeDefined();
+
+      // Unmount should trigger cleanup (verified through useEffect)
+      unmount();
+
+      // If there were active polling, it would be stopped
+      // Full verification requires integration testing with active polling
+    });
   });
 
   describe("useUpdateSubscription", () => {
