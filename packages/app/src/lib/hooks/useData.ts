@@ -120,6 +120,7 @@ export const useCreateSubscriptionWithRefetch = () => {
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const attemptsRef = useRef(0); // Use ref to avoid closure issues
   const isMountedRef = useRef(true); // Track mount status to prevent state updates after unmount
+  const isExecutingRef = useRef(false); // Prevent concurrent executions
   const [isPolling, setIsPolling] = useState(false);
   const [pollAttempts, setPollAttempts] = useState(0);
 
@@ -151,6 +152,13 @@ export const useCreateSubscriptionWithRefetch = () => {
     categoryIds?: number[];
     newCategoryNames?: string[];
   }) => {
+    // Prevent concurrent executions - if already executing, ignore this call
+    if (isExecutingRef.current) {
+      return;
+    }
+
+    isExecutingRef.current = true;
+
     // Stop any existing polling (synchronously to prevent race conditions)
     stopPolling();
 
@@ -279,9 +287,15 @@ export const useCreateSubscriptionWithRefetch = () => {
         POLL_INTERVAL_MS,
       ) as NodeJS.Timeout;
     } catch (error) {
-      // Reset polling state if subscription creation fails
+      // Reset polling state and execution flag if subscription creation fails
       stopPolling();
+      isExecutingRef.current = false;
       throw error; // Re-throw to let the mutation handle the error
+    } finally {
+      // Always reset execution flag when done (including successful polling completion)
+      // Note: stopPolling() is called in various places (success, timeout, error) which will
+      // naturally end execution, but we need finally to handle any other exit paths
+      isExecutingRef.current = false;
     }
   };
 
