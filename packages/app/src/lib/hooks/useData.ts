@@ -119,12 +119,14 @@ export const useCreateSubscriptionWithRefetch = () => {
   const queryClient = useQueryClient();
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const attemptsRef = useRef(0); // Use ref to avoid closure issues
+  const isMountedRef = useRef(true); // Track mount status to prevent state updates after unmount
   const [isPolling, setIsPolling] = useState(false);
   const [pollAttempts, setPollAttempts] = useState(0);
 
   // Cleanup polling on unmount
   useEffect(() => {
     return () => {
+      isMountedRef.current = false;
       if (pollIntervalRef.current) {
         clearTimeout(pollIntervalRef.current);
       }
@@ -199,6 +201,9 @@ export const useCreateSubscriptionWithRefetch = () => {
         await queryClient.refetchQueries({
           queryKey: [["trpc"], ["articles", "list"]],
         });
+
+        // Check if component unmounted during async refetch
+        if (!isMountedRef.current) return;
 
         // Count articles from the new source (cache is guaranteed fresh after await above)
         // Optimized: reduce instead of nested loops with filter
