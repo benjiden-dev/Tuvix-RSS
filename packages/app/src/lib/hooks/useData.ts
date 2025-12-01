@@ -157,10 +157,9 @@ export const useCreateSubscriptionWithRefetch = () => {
       const sourceId = subscription.source.id;
 
       // Get initial article count for this source
-      const initialResult =
-        queryClient.getQueriesData<InfiniteArticlesData>({
-          queryKey: [["trpc"], ["articles", "list"]],
-        });
+      const initialResult = queryClient.getQueriesData<InfiniteArticlesData>({
+        queryKey: [["trpc"], ["articles", "list"]],
+      });
 
       let initialCount = 0;
       for (const [, data] of initialResult) {
