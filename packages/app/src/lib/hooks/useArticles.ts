@@ -110,6 +110,8 @@ export const useMarkArticleRead = () => {
       toast.error("Failed to mark as read");
     },
     onSuccess: () => {
+      // Invalidate all article list queries to ensure filtered views are updated
+      utils.articles.list.invalidate();
       toast.success("Marked as read");
     },
   });
@@ -156,6 +158,8 @@ export const useMarkArticleUnread = () => {
       toast.error("Failed to mark as unread");
     },
     onSuccess: () => {
+      // Invalidate all article list queries to ensure filtered views are updated
+      utils.articles.list.invalidate();
       toast.success("Marked as unread");
     },
   });
@@ -202,6 +206,8 @@ export const useSaveArticle = () => {
       toast.error("Failed to save article");
     },
     onSuccess: () => {
+      // Invalidate all article list queries to ensure filtered views are updated
+      utils.articles.list.invalidate();
       toast.success("Article saved");
     },
   });
@@ -248,6 +254,8 @@ export const useUnsaveArticle = () => {
       toast.error("Failed to unsave article");
     },
     onSuccess: () => {
+      // Invalidate all article list queries to ensure filtered views are updated
+      utils.articles.list.invalidate();
       toast.success("Article unsaved");
     },
   });
