@@ -77,6 +77,8 @@ export async function extractOgImage(
             }
           }
         } finally {
+          // Clear timeout to prevent unnecessary timer leaks
+          clearTimeout(timeoutId);
           // Always cancel the reader to prevent stalled HTTP responses
           // This releases the connection even if we didn't read the full response
           reader.cancel().catch(() => {
