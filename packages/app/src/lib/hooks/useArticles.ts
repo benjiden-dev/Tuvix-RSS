@@ -3,6 +3,19 @@ import { toast } from "sonner";
 import { trpc } from "../api/trpc";
 import { useQueryClient } from "@tanstack/react-query";
 
+// Type for paginated article structure in React Query cache
+type InfiniteArticlesData = {
+  pages: Array<{
+    items: Array<{
+      id: number;
+      read: boolean;
+      saved: boolean;
+      source?: { id: number };
+    }>;
+  }>;
+  pageParams: unknown[];
+};
+
 // Hooks
 export const useArticles = (filters?: {
   categoryId?: number;
@@ -61,12 +74,12 @@ export const useMarkArticleRead = () => {
 
       // Snapshot the previous value for rollback
       const previousData = queryClient.getQueriesData({
-        queryKey: [["articles", "list"]],
+        queryKey: [["trpc"], ["articles", "list"]],
       });
 
       // Optimistically update all cached queries
-      queryClient.setQueriesData<{ pages: Array<{ items: Array<{ id: number; read: boolean }> }> }>(
-        { queryKey: [["articles", "list"]] },
+      queryClient.setQueriesData<InfiniteArticlesData>(
+        { queryKey: [["trpc"], ["articles", "list"]] },
         (old) => {
           if (!old?.pages) return old;
           return {
@@ -74,11 +87,11 @@ export const useMarkArticleRead = () => {
             pages: old.pages.map((page) => ({
               ...page,
               items: page.items.map((article) =>
-                article.id === id ? { ...article, read: true } : article
+                article.id === id ? { ...article, read: true } : article,
               ),
             })),
           };
-        }
+        },
       );
 
       return { previousData };
@@ -107,11 +120,11 @@ export const useMarkArticleUnread = () => {
       await utils.articles.list.cancel();
 
       const previousData = queryClient.getQueriesData({
-        queryKey: [["articles", "list"]],
+        queryKey: [["trpc"], ["articles", "list"]],
       });
 
-      queryClient.setQueriesData<{ pages: Array<{ items: Array<{ id: number; read: boolean }> }> }>(
-        { queryKey: [["articles", "list"]] },
+      queryClient.setQueriesData<InfiniteArticlesData>(
+        { queryKey: [["trpc"], ["articles", "list"]] },
         (old) => {
           if (!old?.pages) return old;
           return {
@@ -119,11 +132,11 @@ export const useMarkArticleUnread = () => {
             pages: old.pages.map((page) => ({
               ...page,
               items: page.items.map((article) =>
-                article.id === id ? { ...article, read: false } : article
+                article.id === id ? { ...article, read: false } : article,
               ),
             })),
           };
-        }
+        },
       );
 
       return { previousData };
@@ -151,11 +164,11 @@ export const useSaveArticle = () => {
       await utils.articles.list.cancel();
 
       const previousData = queryClient.getQueriesData({
-        queryKey: [["articles", "list"]],
+        queryKey: [["trpc"], ["articles", "list"]],
       });
 
-      queryClient.setQueriesData<{ pages: Array<{ items: Array<{ id: number; saved: boolean }> }> }>(
-        { queryKey: [["articles", "list"]] },
+      queryClient.setQueriesData<InfiniteArticlesData>(
+        { queryKey: [["trpc"], ["articles", "list"]] },
         (old) => {
           if (!old?.pages) return old;
           return {
@@ -163,11 +176,11 @@ export const useSaveArticle = () => {
             pages: old.pages.map((page) => ({
               ...page,
               items: page.items.map((article) =>
-                article.id === id ? { ...article, saved: true } : article
+                article.id === id ? { ...article, saved: true } : article,
               ),
             })),
           };
-        }
+        },
       );
 
       return { previousData };
@@ -195,11 +208,11 @@ export const useUnsaveArticle = () => {
       await utils.articles.list.cancel();
 
       const previousData = queryClient.getQueriesData({
-        queryKey: [["articles", "list"]],
+        queryKey: [["trpc"], ["articles", "list"]],
       });
 
-      queryClient.setQueriesData<{ pages: Array<{ items: Array<{ id: number; saved: boolean }> }> }>(
-        { queryKey: [["articles", "list"]] },
+      queryClient.setQueriesData<InfiniteArticlesData>(
+        { queryKey: [["trpc"], ["articles", "list"]] },
         (old) => {
           if (!old?.pages) return old;
           return {
@@ -207,11 +220,11 @@ export const useUnsaveArticle = () => {
             pages: old.pages.map((page) => ({
               ...page,
               items: page.items.map((article) =>
-                article.id === id ? { ...article, saved: false } : article
+                article.id === id ? { ...article, saved: false } : article,
               ),
             })),
           };
-        }
+        },
       );
 
       return { previousData };
