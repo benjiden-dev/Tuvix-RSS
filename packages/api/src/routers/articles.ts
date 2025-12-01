@@ -1013,11 +1013,10 @@ export const articlesRouter = router({
 
       // Execute all counts in parallel
       const [allCount, unreadCount, readCount, savedCount] = await Promise.all([
-        withQueryMetrics(
-          "articles.counts.all",
-          () => executeCount(),
-          { "db.operation": "count", "db.user_id": userId }
-        ),
+        withQueryMetrics("articles.counts.all", () => executeCount(), {
+          "db.operation": "count",
+          "db.user_id": userId,
+        }),
         withQueryMetrics(
           "articles.counts.unread",
           () => executeCount({ read: false }),
