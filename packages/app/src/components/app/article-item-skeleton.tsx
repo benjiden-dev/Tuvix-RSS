@@ -1,5 +1,10 @@
 import { Skeleton } from "@/components/ui/skeleton";
-import { Item, ItemContent, ItemFooter, ItemHeader } from "@/components/ui/item";
+import {
+  Item,
+  ItemContent,
+  ItemFooter,
+  ItemHeader,
+} from "@/components/ui/item";
 
 interface ArticleItemSkeletonProps {
   count?: number;

@@ -61,7 +61,8 @@ function transformArticleRow(row: {
     source: {
       id: row.sources.id,
       url: row.sources.url,
-      title: row.sources.title,
+      // Use subscription's custom title if set, otherwise use source's title
+      title: row.subscriptions.customTitle ?? row.sources.title,
       description: row.sources.description,
       siteUrl: row.sources.siteUrl,
       iconUrl: row.sources.iconUrl,
