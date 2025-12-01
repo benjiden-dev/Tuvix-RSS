@@ -270,6 +270,13 @@ function ArticlesPage() {
   // Use ref to track if we're already fetching to prevent duplicate fetches
   const isFetchingRef = useRef(false);
 
+  // Reset fetch state when user switches tabs to prevent race conditions
+  // Without this, a fetch completing from the previous tab could leave isFetchingRef
+  // in an inconsistent state for the new tab
+  useEffect(() => {
+    isFetchingRef.current = false;
+  }, [activeFilter]);
+
   useEffect(() => {
     if (
       inView &&
