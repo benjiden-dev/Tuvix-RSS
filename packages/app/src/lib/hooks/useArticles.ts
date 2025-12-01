@@ -10,7 +10,7 @@ export type InfiniteArticlesData = {
       id: number;
       read: boolean;
       saved: boolean;
-      source?: { id: number };
+      source: { id: number }; // Required - API always returns source via database join
     }>;
     total: number;
     hasMore: boolean;

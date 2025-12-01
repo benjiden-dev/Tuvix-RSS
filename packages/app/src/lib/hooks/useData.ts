@@ -162,8 +162,8 @@ export const useCreateSubscriptionWithRefetch = () => {
       const subscription = await createSubscription.mutateAsync(input);
 
       // Validate that we have a source ID before proceeding
-      if (!subscription.source?.id) {
-        throw new Error("Subscription created but source ID is missing");
+      if (!subscription.source) {
+        throw new Error("Subscription created but source is missing");
       }
 
       const sourceId = subscription.source.id;
@@ -178,7 +178,7 @@ export const useCreateSubscriptionWithRefetch = () => {
         if (data?.pages) {
           for (const page of data.pages) {
             initialCount += page.items.filter(
-              (item) => item.source?.id === sourceId,
+              (item) => item.source.id === sourceId,
             ).length;
           }
         }
@@ -220,7 +220,7 @@ export const useCreateSubscriptionWithRefetch = () => {
                 pageTotal +
                 page.items.reduce(
                   (itemTotal, item) =>
-                    itemTotal + (item.source?.id === sourceId ? 1 : 0),
+                    itemTotal + (item.source.id === sourceId ? 1 : 0),
                   0,
                 ),
               0,
