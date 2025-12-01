@@ -967,4 +967,79 @@ export const articlesRouter = router({
         message: "Feed refresh triggered in background",
       };
     }),
+
+  /**
+   * Get article counts for all filter tabs
+   * Optimized endpoint that returns ONLY counts without fetching article data
+   * This replaces fetching 4 full article queries just to get totals
+   */
+  getCounts: rateLimitedProcedure
+    .input(
+      z.object({
+        categoryId: z.number().optional(),
+        subscriptionId: z.number().optional(),
+      })
+    )
+    .query(async ({ ctx, input }) => {
+      const userId = ctx.user.userId;
+
+      // Helper to execute count query efficiently
+      const executeCount = async (additionalFilters?: {
+        read?: boolean;
+        saved?: boolean;
+      }) => {
+        // Use buildArticlesBaseQuery - same JOINs as main query
+        let baseQuery = buildArticlesBaseQuery(ctx.db, userId);
+
+        // Apply category filter if provided
+        if (input.categoryId) {
+          baseQuery = applyCategoryFilter(baseQuery, input.categoryId);
+        }
+
+        // Build WHERE conditions
+        const conditions = buildArticlesWhereConditions({
+          subscriptionId: input.subscriptionId,
+          ...additionalFilters,
+        });
+
+        if (conditions.length > 0) {
+          baseQuery = baseQuery.where(and(...conditions));
+        }
+
+        // Execute and count unique article IDs
+        const results = await baseQuery;
+        return new Set(results.map((r) => r.articles.id)).size;
+      };
+
+      // Execute all counts in parallel
+      const [allCount, unreadCount, readCount, savedCount] = await Promise.all([
+        withQueryMetrics(
+          "articles.counts.all",
+          () => executeCount(),
+          { "db.operation": "count", "db.user_id": userId }
+        ),
+        withQueryMetrics(
+          "articles.counts.unread",
+          () => executeCount({ read: false }),
+          { "db.operation": "count", "db.user_id": userId }
+        ),
+        withQueryMetrics(
+          "articles.counts.read",
+          () => executeCount({ read: true }),
+          { "db.operation": "count", "db.user_id": userId }
+        ),
+        withQueryMetrics(
+          "articles.counts.saved",
+          () => executeCount({ saved: true }),
+          { "db.operation": "count", "db.user_id": userId }
+        ),
+      ]);
+
+      return {
+        all: allCount,
+        unread: unreadCount,
+        read: readCount,
+        saved: savedCount,
+      };
+    }),
 });

@@ -140,32 +140,18 @@ function ArticlesPage() {
     [data?.pages],
   );
 
-  // Fetch counts for all tabs (lightweight queries that only fetch totals)
-  // We need separate queries for each filter to show accurate badge counts
-  const allCountQuery = useInfiniteArticles({
+  // Fetch counts for all tabs using optimized endpoint
+  // Single query that returns ONLY counts (no article data)
+  // Replaces 4 separate queries that fetched 200 articles just for counts!
+  const { data: counts } = trpc.articles.getCounts.useQuery({
     categoryId: search.category_id,
     subscriptionId: search.subscription_id,
-  });
-  const unreadCountQuery = useInfiniteArticles({
-    categoryId: search.category_id,
-    subscriptionId: search.subscription_id,
-    read: false,
-  });
-  const readCountQuery = useInfiniteArticles({
-    categoryId: search.category_id,
-    subscriptionId: search.subscription_id,
-    read: true,
-  });
-  const savedCountQuery = useInfiniteArticles({
-    categoryId: search.category_id,
-    subscriptionId: search.subscription_id,
-    saved: true,
   });
 
-  const allCount = allCountQuery.data?.pages?.[0]?.total ?? 0;
-  const unreadCount = unreadCountQuery.data?.pages?.[0]?.total ?? 0;
-  const readCount = readCountQuery.data?.pages?.[0]?.total ?? 0;
-  const savedCount = savedCountQuery.data?.pages?.[0]?.total ?? 0;
+  const allCount = counts?.all ?? 0;
+  const unreadCount = counts?.unread ?? 0;
+  const readCount = counts?.read ?? 0;
+  const savedCount = counts?.saved ?? 0;
 
   // Track previous article IDs to detect changes
   const previousArticleIdsRef = useRef<Set<number>>(new Set());

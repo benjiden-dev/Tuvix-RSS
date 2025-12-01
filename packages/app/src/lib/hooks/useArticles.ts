@@ -61,6 +61,18 @@ export const useInfiniteArticles = (filters?: {
   );
 };
 
+/**
+ * Optimized hook to fetch article counts for all filter tabs
+ * Returns ONLY counts without fetching any article data
+ * Replaces 4 separate useInfiniteArticles calls (200 articles) with 1 lightweight query
+ */
+export const useArticleCounts = (filters?: {
+  categoryId?: number;
+  subscriptionId?: number;
+}) => {
+  return trpc.articles.getCounts.useQuery(filters || {});
+};
+
 export const useArticle = (id: number) => {
   return trpc.articles.getById.useQuery({ id });
 };
