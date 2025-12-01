@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { Link } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -81,26 +82,26 @@ export function LoginForm() {
 
         <p className="text-muted-foreground text-sm text-center">
           Don&apos;t have an account?{" "}
-          <a href="/register" className="underline underline-offset-4">
+          <Link to="/register" className="underline underline-offset-4">
             Sign up
-          </a>
+          </Link>
         </p>
 
         <div className="text-xs text-muted-foreground text-center space-x-2">
           <span>By using TuvixRSS, you agree to our</span>
-          <a
-            href="/terms"
+          <Link
+            to="/terms"
             className="underline underline-offset-4 hover:text-foreground"
           >
             Terms of Service
-          </a>
+          </Link>
           <span>and</span>
-          <a
-            href="/privacy"
+          <Link
+            to="/privacy"
             className="underline underline-offset-4 hover:text-foreground"
           >
             Privacy Policy
-          </a>
+          </Link>
         </div>
       </form>
     </Form>

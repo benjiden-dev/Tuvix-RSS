@@ -157,7 +157,7 @@ function PrivacyPolicy() {
                 rel="noopener noreferrer"
                 className="text-primary hover:underline"
               >
-                Sentry's Privacy Policy
+                Sentry&apos;s Privacy Policy
               </a>
               .
             </p>

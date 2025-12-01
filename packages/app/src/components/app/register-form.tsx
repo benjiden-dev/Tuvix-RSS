@@ -1,6 +1,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { Link } from "@tanstack/react-router";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -166,26 +167,26 @@ export function RegisterForm() {
 
         <p className="text-muted-foreground text-sm text-center">
           Already have an account?{" "}
-          <a href="/" className="underline underline-offset-4">
+          <Link to="/" className="underline underline-offset-4">
             Login
-          </a>
+          </Link>
         </p>
 
         <div className="text-xs text-muted-foreground text-center space-x-2">
           <span>By creating an account, you agree to our</span>
-          <a
-            href="/terms"
+          <Link
+            to="/terms"
             className="underline underline-offset-4 hover:text-foreground"
           >
             Terms of Service
-          </a>
+          </Link>
           <span>and</span>
-          <a
-            href="/privacy"
+          <Link
+            to="/privacy"
             className="underline underline-offset-4 hover:text-foreground"
           >
             Privacy Policy
-          </a>
+          </Link>
         </div>
       </form>
     </Form>
