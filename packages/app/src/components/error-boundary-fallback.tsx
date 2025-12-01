@@ -9,17 +9,18 @@ import {
 import { AlertCircle, RefreshCw, Home } from "lucide-react";
 
 interface ErrorFallbackProps {
-  error?: Error;
-  resetError?: () => void;
+  error: unknown;
+  componentStack: string;
+  eventId: string;
+  resetError: () => void;
 }
 
 export function ErrorBoundaryFallback({
   error,
   resetError,
 }: ErrorFallbackProps) {
-  const handleReload = () => {
-    window.location.reload();
-  };
+  // Convert unknown error to Error type for display
+  const errorMessage = error instanceof Error ? error.message : String(error);
 
   const handleGoHome = () => {
     window.location.href = "/app";
@@ -39,16 +40,16 @@ export function ErrorBoundaryFallback({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error?.message && (
+          {errorMessage && (
             <div className="rounded-md bg-muted p-3">
               <p className="text-sm font-mono text-muted-foreground">
-                {error.message}
+                {errorMessage}
               </p>
             </div>
           )}
           <div className="flex flex-col gap-2">
             <Button
-              onClick={resetError || handleReload}
+              onClick={resetError}
               className="w-full"
               size="lg"
             >
