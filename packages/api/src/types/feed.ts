@@ -15,4 +15,6 @@ export interface DiscoveredFeed {
   title: string;
   description?: string;
   type: "rss" | "atom" | "rdf" | "json";
+  /** Platform-specific high-quality icon URL (e.g., iTunes artwork, Reddit community icon) */
+  iconUrl?: string;
 }
