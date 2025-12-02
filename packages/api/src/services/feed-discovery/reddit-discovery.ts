@@ -46,7 +46,9 @@ export class RedditDiscoveryService implements DiscoveryService {
           const baseUrl = `${parsedUrl.protocol}//${parsedUrl.hostname}`;
 
           // Extract subreddit or user from URL
-          const match = url.match(/\/r\/([^/.]+)|\/user\/([^/.]+)/);
+          // Reddit identifiers can only contain: alphanumeric, underscores, and hyphens
+          // Length: 3-21 characters for subreddits, 3-20 for usernames
+          const match = url.match(/\/r\/([\w-]{3,21})|\/user\/([\w-]{3,20})/);
           if (!match) {
             span.setStatus({ code: 2, message: "Not a subreddit or user URL" });
             return [];
@@ -54,6 +56,12 @@ export class RedditDiscoveryService implements DiscoveryService {
 
           const subreddit = match[1];
           const username = match[2];
+
+          // Additional validation: ensure we extracted a valid identifier
+          if (!subreddit && !username) {
+            span.setStatus({ code: 2, message: "Invalid Reddit URL" });
+            return [];
+          }
 
           let feedUrl: string;
           let iconUrl: string | undefined;
