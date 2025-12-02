@@ -38,12 +38,15 @@ export function createFeedValidator(
       // Check if this URL is currently being validated
       const inFlightRequest = inFlightRequests.get(normalizedInputUrl);
       if (inFlightRequest) {
-        // Wait for the in-flight request to complete
-        return await inFlightRequest;
+        // Another request is already validating this normalized URL
+        // Return null to deduplicate (the first request will handle it)
+        return null;
       }
 
-      // Mark URL as seen immediately to prevent other concurrent calls from starting
-      seenUrls.add(normalizedInputUrl);
+      // Note: We don't add normalizedInputUrl to seenUrls yet because we need to
+      // determine the final URL first (after redirects). If we added it now,
+      // and another concurrent request tries the redirect target directly,
+      // it might complete first and cause this request to be deduplicated incorrectly.
 
       // Create validation promise
       const validationPromise = (async () => {
@@ -63,19 +66,17 @@ export function createFeedValidator(
           const finalUrl = response.url;
           const normalizedFinalUrl = normalizeFeedUrl(finalUrl);
 
-          // Handle redirects: check if final URL was already discovered via a different path
-          // Example: /feed redirects to /feed.xml, later /rss also redirects to /feed.xml
-          // We want to keep the first one (/feed) and reject the second (/rss)
-          if (normalizedFinalUrl !== normalizedInputUrl) {
-            // There was a redirect to a different URL
-            if (seenUrls.has(normalizedFinalUrl)) {
-              return null; // Final URL already discovered via another path
-            }
-            seenUrls.add(normalizedFinalUrl); // Mark final URL as seen to catch future redirects to it
+          // Check if the final URL (after following any redirects) has already been seen
+          if (seenUrls.has(normalizedFinalUrl)) {
+            return null; // This feed was already discovered via another path
           }
-          // If no redirect (normalizedFinalUrl == normalizedInputUrl), normalizedInputUrl
-          // is already in seenUrls from line 46, so future attempts to fetch this exact
-          // URL will be caught at line 36
+
+          // Mark both the input URL and final URL as seen
+          // This prevents future requests to either URL from fetching again
+          seenUrls.add(normalizedInputUrl);
+          if (normalizedFinalUrl !== normalizedInputUrl) {
+            seenUrls.add(normalizedFinalUrl);
+          }
 
           const feedContent = await response.text();
           const result = parseFeed(feedContent);
