@@ -1,5 +1,5 @@
 {
-  "name": "@tuvix/api",
+  "name": "@tuvixrss/api",
   "version": "0.1.0",
   "type": "module",
   "description": "TuvixRSS tRPC API - Portable TypeScript backend for Docker and Cloudflare Workers",

@@ -208,7 +208,7 @@ importers:
       '@trpc/server':
         specifier: ^11.7.2
         version: 11.7.2(typescript@5.9.3)
-      '@tuvix/api':
+      '@tuvixrss/api':
         specifier: workspace:*
         version: link:../api
       better-auth:

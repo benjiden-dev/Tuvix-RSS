@@ -135,7 +135,7 @@ export function createDefaultRegistry(options?: {
  * @example
  * **Basic usage**
  * ```typescript
- * import { discoverFeeds } from '@tuvix/tricorder';
+ * import { discoverFeeds } from '@tuvixrss/tricorder';
  *
  * const feeds = await discoverFeeds('https://example.com');
  * console.log(`Found ${feeds.length} feeds`);
@@ -147,7 +147,7 @@ export function createDefaultRegistry(options?: {
  * @example
  * **With error handling**
  * ```typescript
- * import { discoverFeeds, NoFeedsFoundError } from '@tuvix/tricorder';
+ * import { discoverFeeds, NoFeedsFoundError } from '@tuvixrss/tricorder';
  *
  * try {
  *   const feeds = await discoverFeeds('https://example.com');
@@ -164,7 +164,7 @@ export function createDefaultRegistry(options?: {
  * @example
  * **With telemetry**
  * ```typescript
- * import { discoverFeeds } from '@tuvix/tricorder';
+ * import { discoverFeeds } from '@tuvixrss/tricorder';
  * import { sentryAdapter } from './sentry-adapter';
  *
  * const feeds = await discoverFeeds('https://example.com', {
