@@ -224,6 +224,7 @@ export const articles = sqliteTable(
     author: text("author"),
     imageUrl: text("image_url"),
     audioUrl: text("audio_url"),
+    commentLink: text("comment_link"),
     publishedAt: integer("published_at", { mode: "timestamp" }),
     createdAt: integer("created_at", { mode: "timestamp" })
       .notNull()
