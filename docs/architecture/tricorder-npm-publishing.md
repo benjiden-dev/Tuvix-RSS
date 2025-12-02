@@ -34,18 +34,55 @@ Versioning is **independent** from API/App versions. Tricorder can be on v2.0.0 
 2. **Access**: Free for unlimited public packages
 3. **Members**: Configure in NPM organization settings
 
-### GitHub Secrets
+### Trusted Publishing with OIDC (Recommended)
 
-Required secret configured in repository:
+As of npm v11.5.1, **trusted publishing with OpenID Connect (OIDC)** is the recommended approach. This eliminates the need for long-lived tokens and provides automatic provenance attestations.
+
+**Benefits:**
+- No token management required
+- Short-lived, workflow-specific credentials
+- Automatic provenance attestations
+- Enhanced security with cryptographic trust
+
+**Setup on npmjs.com:**
+1. Go to your package settings at https://www.npmjs.com/package/@tuvixrss/tricorder/access
+2. Navigate to "Publishing access" → "Trusted publishers"
+3. Click "Add trusted publisher"
+4. Select "GitHub Actions" as the provider
+5. Configure the trusted publisher:
+   - **Organization**: `TechSquidTV`
+   - **Repository**: `Tuvix-RSS`
+   - **Workflow filename**: `publish-tricorder.yml`
+   - **Environment name**: `npm-registry` (optional but recommended)
+
+**Workflow Configuration:**
+
+The workflow must include these permissions at the **workflow level** (not job level):
+
+```yaml
+permissions:
+  id-token: write  # Required for OIDC trusted publishing
+  contents: read   # Required to read repository contents
+```
+
+**Requirements:**
+- npm CLI v11.5.1 or later (automatically updated in workflow)
+- GitHub-hosted runners (self-hosted runners not yet supported)
+
+### Alternative: GitHub Secrets (Legacy)
+
+If not using trusted publishing, you'll need to configure an NPM token:
 
 - **Name**: `NPM_TOKEN`
 - **Type**: Automation token (allows CI/CD publishing)
 - **Location**: Repository Settings → Secrets and variables → Actions
 - **Permissions**: Publish access to `@tuvixrss` scope
 
+**Note:** This approach is deprecated in favor of OIDC trusted publishing.
+
 ### GitHub Environment
 
-Created environment for additional safety:
+Environment configured for deployment tracking:
 
 - **Name**: `npm-registry`
 - **URL**: https://www.npmjs.com/package/@tuvixrss/tricorder
@@ -101,13 +138,16 @@ paths:
 6. Verify package contents with `npm pack --dry-run`
 
 #### Publish Stage (if verify passes)
-1. Validate version matches git tag
-2. Check if version already published (skip if yes)
-3. Publish to NPM registry
-4. Create GitHub release with changelog
-5. Output success with NPM link
+1. Update npm to latest version (ensures v11.5.1+ for OIDC support)
+2. Validate version matches git tag
+3. Check if version already published (skip if yes)
+4. Publish to NPM registry using OIDC trusted publishing
+5. Create GitHub release
+6. Output success with NPM link
 
 **Safety Features**:
+- ✅ OIDC trusted publishing (no long-lived tokens)
+- ✅ Automatic provenance attestations
 - ✅ Version validation (tag must match package.json)
 - ✅ Duplicate detection (won't republish same version)
 - ✅ Dry-run mode for testing
@@ -118,25 +158,42 @@ paths:
 
 ## Publishing Process
 
+### Prerequisites (One-Time Setup)
+
+**Before first publish, configure trusted publishing on npmjs.com:**
+
+1. Go to https://www.npmjs.com/package/@tuvixrss/tricorder/access
+2. Click "Publishing access" → "Trusted publishers" → "Add trusted publisher"
+3. Select "GitHub Actions" and configure:
+   - Organization: `TechSquidTV`
+   - Repository: `Tuvix-RSS`
+   - Workflow filename: `publish-tricorder.yml`
+   - Environment name: `npm-registry` (optional)
+4. Save the configuration
+
+**Optional: Create GitHub environment for tracking**
+
+```bash
+gh api repos/:owner/:repo/environments/npm-registry --method PUT --field "wait_timer=0"
+```
+
 ### Recommended: Automatic via Git Tag
 
 ```bash
 cd packages/tricorder
 
-# 1. Update CHANGELOG.md with changes
-
-# 2. Bump version
+# 1. Bump version
 npm version patch  # or minor/major
 
-# 3. Commit
+# 2. Commit
 git add .
-git commit -m "chore(tricorder): release v1.0.1"
+git commit -m "chore(tricorder): release v0.1.1"
 
-# 4. Create tag
+# 3. Create tag
 VERSION=$(node -p "require('./package.json').version")
 git tag "tricorder-v$VERSION"
 
-# 5. Push (this triggers publish workflow)
+# 4. Push (this triggers publish workflow with OIDC authentication)
 git push origin main --tags
 ```
 
