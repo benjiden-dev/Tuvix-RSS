@@ -14,6 +14,7 @@ import {
   EyeIcon,
   EyeOffIcon as LucideEyeOffIcon,
   ClockIcon,
+  MessageSquare,
 } from "lucide-react";
 import { EyeOffIcon } from "@/components/ui/eye-off";
 import { BookmarkIcon } from "@/components/ui/bookmark";
@@ -336,6 +337,25 @@ export function ArticleItem({ article, className }: ArticleItemProps) {
                 className={cn("h-8 gap-1.5", isMobile && "flex-1")}
               />
             </div>
+            {article.commentLink && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn("h-8 gap-1.5", isMobile && "flex-1")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(
+                    article.commentLink || "",
+                    "_blank",
+                    "noopener,noreferrer",
+                  );
+                }}
+                title="View Comments"
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span className="text-xs">Comments</span>
+              </Button>
+            )}
           </div>
           {!isMobile && (
             <Button
