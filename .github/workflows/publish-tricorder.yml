@@ -23,6 +23,10 @@ env:
   PNPM_VERSION: 10.19.0
   NODE_VERSION: '20'
 
+permissions:
+  id-token: write  # Required for OIDC trusted publishing
+  contents: read   # Required to read repository contents
+
 jobs:
   # Verify tricorder package independently
   verify:
@@ -98,6 +102,9 @@ jobs:
           cache: 'pnpm'
           registry-url: 'https://registry.npmjs.org'
 
+      - name: Update npm to latest version
+        run: npm install -g npm@latest
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -146,8 +153,6 @@ jobs:
         run: |
           cd packages/tricorder
           npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Skip publish (already published)
         if: steps.check_version.outputs.already_published == 'true'
@@ -159,9 +164,7 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const fs = require('fs');
             const version = context.ref.replace('refs/tags/tricorder-v', '');
-            const changelog = fs.readFileSync('packages/tricorder/CHANGELOG.md', 'utf8');
 
             // Check if release already exists
             let releaseExists = false;
@@ -178,16 +181,12 @@ jobs:
             }
 
             if (!releaseExists) {
-              // Extract the changelog section for this version
-              const versionSection = changelog.match(new RegExp(`## \\[${version}\\][\\s\\S]*?(?=## \\[|$)`, 'm'));
-              const releaseNotes = versionSection ? versionSection[0] : `Release version ${version}`;
-
               await github.rest.repos.createRelease({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 tag_name: context.ref.replace('refs/tags/', ''),
                 name: `@tuvixrss/tricorder v${version}`,
-                body: `# Tricorder ${version}\n\n${releaseNotes}\n\n## NPM\nhttps://www.npmjs.com/package/@tuvixrss/tricorder/v/${version}`,
+                body: `# Tricorder ${version}\n\nRSS and Atom feed discovery library for Node.js and browsers.\n\n## NPM\nhttps://www.npmjs.com/package/@tuvixrss/tricorder/v/${version}`,
                 draft: false,
                 prerelease: version.includes('-')
               });
