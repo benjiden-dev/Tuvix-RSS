@@ -342,18 +342,18 @@ export function ArticleItem({ article, className }: ArticleItemProps) {
                 variant="ghost"
                 size="sm"
                 className={cn("h-8 gap-1.5", isMobile && "flex-1")}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  window.open(
-                    article.commentLink,
-                    "_blank",
-                    "noopener,noreferrer",
-                  );
-                }}
-                title="View Comments"
+                asChild
               >
-                <MessageSquare className="w-4 h-4" />
-                <span className="text-xs">Comments</span>
+                <a
+                  href={article.commentLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  title="View Comments"
+                >
+                  <MessageSquare className="w-4 h-4" />
+                  <span className="text-xs">Comments</span>
+                </a>
               </Button>
             )}
           </div>
