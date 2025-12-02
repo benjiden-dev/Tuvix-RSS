@@ -354,32 +354,64 @@ export const subscriptionsRouter = router({
             ? feedData.links[0].href
             : undefined;
 
-      // Step 3.5: Extract icon URL from feed (itunes:image, image.url, or icon)
+      // Step 3.5: Extract icon URL from feed
       let feedIconUrl: string | undefined;
       try {
-        // Priority: itunes:image > image.url > icon
-        const itunesImage = extractItunesImage(feedData, feedContent);
+        // First, try platform-specific discovery for the original input URL
+        // This handles Apple Podcasts, Reddit, etc. with high-quality icons
+        if (!input.iconUrl && (!input.iconType || input.iconType === "auto")) {
+          const { discoverFeeds } = await import("@/services/feed-discovery");
+          try {
+            const discoveredFeeds = await discoverFeeds(input.url);
+            // Use iconUrl from discovery if available (platform-specific high-quality icons)
+            if (discoveredFeeds.length > 0 && discoveredFeeds[0].iconUrl) {
+              feedIconUrl = discoveredFeeds[0].iconUrl;
 
-        feedIconUrl =
-          itunesImage ||
-          ("image" in feedData &&
-          typeof feedData.image === "object" &&
-          feedData.image !== null &&
-          "url" in feedData.image &&
-          typeof feedData.image.url === "string"
-            ? feedData.image.url
-            : "icon" in feedData && typeof feedData.icon === "string"
-              ? feedData.icon
-              : undefined);
+              await Sentry.addBreadcrumb({
+                category: "subscription",
+                message: `Using icon from discovery service`,
+                level: "info",
+                data: {
+                  icon_url: feedIconUrl,
+                  discovery_service: "platform_specific",
+                },
+              });
+            }
+          } catch (discoveryError) {
+            // Discovery failed, fall through to feed metadata
+            console.log(
+              "[create] Discovery failed, falling back to feed metadata:",
+              discoveryError
+            );
+          }
+        }
 
-        // Discover favicon if iconType is auto (default) and no custom iconUrl provided
-        if (
-          !input.iconUrl &&
-          (!input.iconType || input.iconType === "auto") &&
-          feedIconUrl
-        ) {
-          const faviconResult = await discoverFavicon(feedUrl, feedIconUrl);
-          feedIconUrl = faviconResult.iconUrl || feedIconUrl;
+        // Fall back to feed metadata if no discovery icon found
+        if (!feedIconUrl) {
+          // Priority: itunes:image > image.url > icon
+          const itunesImage = extractItunesImage(feedData, feedContent);
+
+          feedIconUrl =
+            itunesImage ||
+            ("image" in feedData &&
+            typeof feedData.image === "object" &&
+            feedData.image !== null &&
+            "url" in feedData.image &&
+            typeof feedData.image.url === "string"
+              ? feedData.image.url
+              : "icon" in feedData && typeof feedData.icon === "string"
+                ? feedData.icon
+                : undefined);
+
+          // Discover generic favicon if still no icon found
+          if (
+            !input.iconUrl &&
+            (!input.iconType || input.iconType === "auto") &&
+            feedIconUrl
+          ) {
+            const faviconResult = await discoverFavicon(feedUrl, feedIconUrl);
+            feedIconUrl = faviconResult.iconUrl || feedIconUrl;
+          }
         }
       } catch (error) {
         console.error("[create] Failed to discover favicon:", error);
@@ -716,6 +748,7 @@ export const subscriptionsRouter = router({
           title: z.string(),
           type: z.enum(["rss", "atom"]),
           description: z.string().optional(),
+          iconUrl: z.string().optional(),
         })
       )
     )
@@ -734,6 +767,7 @@ export const subscriptionsRouter = router({
           title: feed.title,
           type: feed.type as "rss" | "atom",
           description: feed.description,
+          iconUrl: feed.iconUrl,
         }));
     }),
 
@@ -843,37 +877,65 @@ export const subscriptionsRouter = router({
             : undefined;
 
       // Step 3: Try to get favicon URL
-      // Use favicon-fetcher service with fallback strategies
       let iconUrl: string | undefined;
       try {
-        // Priority: itunes:image > image.url > icon
-        const itunesImage = extractItunesImage(feedData, feedContent);
+        // First, try platform-specific discovery (Apple Podcasts, Reddit, etc.)
+        const { discoverFeeds } = await import("@/services/feed-discovery");
+        try {
+          const discoveredFeeds = await discoverFeeds(input.url);
+          // Use iconUrl from discovery if available (platform-specific high-quality icons)
+          if (discoveredFeeds.length > 0 && discoveredFeeds[0].iconUrl) {
+            iconUrl = discoveredFeeds[0].iconUrl;
 
-        const feedIconUrl =
-          itunesImage ||
-          ("image" in feedData &&
-          typeof feedData.image === "object" &&
-          feedData.image !== null &&
-          "url" in feedData.image &&
-          typeof feedData.image.url === "string"
-            ? feedData.image.url
-            : "icon" in feedData && typeof feedData.icon === "string"
-              ? feedData.icon
-              : undefined);
+            await Sentry.addBreadcrumb({
+              category: "subscription",
+              message: `Icon discovery succeeded (platform-specific)`,
+              level: "info",
+              data: {
+                icon_url: iconUrl,
+                discovery_service: "platform_specific",
+              },
+            });
+          }
+        } catch (discoveryError) {
+          // Discovery failed, fall through to feed metadata
+          console.log(
+            "[preview] Discovery failed, falling back to feed metadata:",
+            discoveryError
+          );
+        }
 
-        const faviconResult = await discoverFavicon(input.url, feedIconUrl);
-        iconUrl = faviconResult.iconUrl || undefined;
+        // Fall back to feed metadata + generic favicon if no discovery icon found
+        if (!iconUrl) {
+          // Priority: itunes:image > image.url > icon
+          const itunesImage = extractItunesImage(feedData, feedContent);
 
-        await Sentry.addBreadcrumb({
-          category: "subscription",
-          message: `Icon discovery ${iconUrl ? "succeeded" : "failed"}`,
-          level: iconUrl ? "info" : "warning",
-          data: {
-            itunes_image: !!itunesImage,
-            feed_icon_url: !!feedIconUrl,
-            final_icon_url: !!iconUrl,
-          },
-        });
+          const feedIconUrl =
+            itunesImage ||
+            ("image" in feedData &&
+            typeof feedData.image === "object" &&
+            feedData.image !== null &&
+            "url" in feedData.image &&
+            typeof feedData.image.url === "string"
+              ? feedData.image.url
+              : "icon" in feedData && typeof feedData.icon === "string"
+                ? feedData.icon
+                : undefined);
+
+          const faviconResult = await discoverFavicon(input.url, feedIconUrl);
+          iconUrl = faviconResult.iconUrl || undefined;
+
+          await Sentry.addBreadcrumb({
+            category: "subscription",
+            message: `Icon discovery ${iconUrl ? "succeeded" : "failed"} (generic)`,
+            level: iconUrl ? "info" : "warning",
+            data: {
+              itunes_image: !!itunesImage,
+              feed_icon_url: !!feedIconUrl,
+              final_icon_url: !!iconUrl,
+            },
+          });
+        }
       } catch (error) {
         console.error("[preview] Failed to discover favicon:", error);
         await Sentry.captureException(error, {
