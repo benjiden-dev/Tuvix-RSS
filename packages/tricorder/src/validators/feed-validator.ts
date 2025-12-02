@@ -63,16 +63,19 @@ export function createFeedValidator(
           const finalUrl = response.url;
           const normalizedFinalUrl = normalizeFeedUrl(finalUrl);
 
-          // If redirect led to a different normalized URL, check and mark it as seen
-          if (
-            normalizedFinalUrl !== normalizedInputUrl &&
-            seenUrls.has(normalizedFinalUrl)
-          ) {
-            return null;
-          }
+          // Handle redirects: check if final URL was already discovered via a different path
+          // Example: /feed redirects to /feed.xml, later /rss also redirects to /feed.xml
+          // We want to keep the first one (/feed) and reject the second (/rss)
           if (normalizedFinalUrl !== normalizedInputUrl) {
-            seenUrls.add(normalizedFinalUrl);
+            // There was a redirect to a different URL
+            if (seenUrls.has(normalizedFinalUrl)) {
+              return null; // Final URL already discovered via another path
+            }
+            seenUrls.add(normalizedFinalUrl); // Mark final URL as seen to catch future redirects to it
           }
+          // If no redirect (normalizedFinalUrl == normalizedInputUrl), normalizedInputUrl
+          // is already in seenUrls from line 46, so future attempts to fetch this exact
+          // URL will be caught at line 36
 
           const feedContent = await response.text();
           const result = parseFeed(feedContent);
@@ -118,9 +121,11 @@ export function createFeedValidator(
                 ? stripHtml(String(feed.subtitle))
                 : undefined;
 
-          // Return discovered feed (use final URL after redirects for consistency)
+          // Return discovered feed (preserve original URL for better UX)
+          // We use the original feedUrl instead of finalUrl so users see clean URLs
+          // The deduplication still works via normalizedFinalUrl tracking above
           return {
-            url: finalUrl,
+            url: feedUrl,
             title,
             type,
             description,
