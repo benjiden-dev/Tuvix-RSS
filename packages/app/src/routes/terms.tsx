@@ -41,7 +41,7 @@ function TermsOfService() {
               Last updated: {new Date().toLocaleDateString()}
             </CardDescription>
           </CardHeader>
-          <CardContent className="prose prose-sm dark:prose-invert max-w-none">
+          <CardContent className="prose prose-slate dark:prose-invert max-w-none prose-headings:font-semibold prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4 prose-h3:text-xl prose-h3:mt-6 prose-h3:mb-3 prose-p:leading-7 prose-p:mb-4 prose-li:my-1 prose-ul:my-3 prose-a:font-medium prose-a:no-underline hover:prose-a:underline">
             <h2>Introduction</h2>
             <p>
               TuvixRSS is an open-source RSS feed aggregator licensed under the
