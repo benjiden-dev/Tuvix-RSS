@@ -763,12 +763,16 @@ async function extractArticleData(
   );
 
   // Remove standalone "Comments" link (Hacker News)
+  // Note: Anchors (^ and $) are intentional - only remove when entire description
+  // is just a "Comments" link. Preserve "Comments" within actual content.
   sanitizedDescription = sanitizedDescription.replace(
     /^<a[^>]*>Comments<\/a>$/gi,
     ""
   );
 
   // Clean up extra whitespace and line breaks
+  // Note: Intentionally collapses multiple breaks to improve readability.
+  // Reddit/HN feeds often have excessive spacing that clutters the UI.
   sanitizedDescription = sanitizedDescription
     .replace(/(<br\s*\/?\s*>\s*){2,}/gi, "<br>") // Collapse multiple <br> tags
     .replace(/<br\s*\/?\s*>\s*$/gi, "") // Remove trailing <br>

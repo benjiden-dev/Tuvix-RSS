@@ -238,9 +238,10 @@ async function getRedditIcon(feedUrl: string): Promise<string | undefined> {
       };
     };
 
-    // Reddit about.json structure:
-    // { data: { community_icon, icon_img } }
-    const iconUrl = data?.data?.community_icon || data?.data?.icon_img; // Modern Reddit icon // Legacy Reddit icon
+    // Reddit about.json structure: { data: { community_icon, icon_img } }
+    // community_icon: Modern Reddit icon (preferred)
+    // icon_img: Legacy Reddit icon (fallback)
+    const iconUrl = data?.data?.community_icon || data?.data?.icon_img;
 
     if (iconUrl) {
       // Reddit returns icons with URL-encoded query params, decode them

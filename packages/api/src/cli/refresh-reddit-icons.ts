@@ -22,9 +22,15 @@ async function main() {
 
   // Find all sources with reddit.com in the URL
   const allSources = await db.select().from(schema.sources);
-  const redditSources = allSources.filter((source) =>
-    source.url.includes("reddit.com")
-  );
+  const redditSources = allSources.filter((source) => {
+    try {
+      const url = new URL(source.url);
+      return url.hostname.includes("reddit.com");
+    } catch {
+      // Invalid URL, skip it
+      return false;
+    }
+  });
 
   console.log(`Found ${redditSources.length} Reddit feeds\n`);
 

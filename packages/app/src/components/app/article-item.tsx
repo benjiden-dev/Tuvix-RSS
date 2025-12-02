@@ -345,7 +345,7 @@ export function ArticleItem({ article, className }: ArticleItemProps) {
                 onClick={(e) => {
                   e.stopPropagation();
                   window.open(
-                    article.commentLink || "",
+                    article.commentLink,
                     "_blank",
                     "noopener,noreferrer",
                   );
