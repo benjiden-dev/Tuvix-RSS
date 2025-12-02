@@ -261,6 +261,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Create wrangler.toml from example
+        uses: ./.github/actions/substitute-d1-database-id
+        with:
+          d1-database-id: ${{ secrets.D1_DATABASE_ID }}
+
       - name: Get worker name
         id: worker-name
         uses: ./.github/actions/get-worker-name
