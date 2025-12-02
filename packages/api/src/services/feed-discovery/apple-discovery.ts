@@ -241,6 +241,7 @@ export class AppleDiscoveryService implements DiscoveryService {
                 podcast.longDescription ||
                 podcast.shortDescription ||
                 discoveredFeed.description,
+              iconUrl: podcast.artworkUrl600 || podcast.artworkUrl100,
             },
           ];
         } catch (error) {
