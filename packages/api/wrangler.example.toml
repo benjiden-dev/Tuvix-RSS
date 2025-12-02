@@ -73,17 +73,24 @@ RUNTIME = "cloudflare"
 crons = ["*/5 * * * *"]
 
 # Observability configuration for Workers logs and traces
+# Collects logs and traces from Worker invocations for debugging and monitoring
 [observability]
 
 [observability.logs]
 enabled = true
+# Destination names must match your Cloudflare → Sentry integration setup
+# For this project: "sentry-logs" routes to our Sentry instance
+# Other users: Update to match your Sentry integration name or remove to disable external routing
 destinations = ["sentry-logs"]
-head_sampling_rate = 1
-persist = true
-invocation_logs = true
+head_sampling_rate = 1  # 1 = 100% sampling (adjust for high-traffic: 0.1 = 10%, 0.01 = 1%)
+persist = true  # Store logs in Cloudflare dashboard for viewing
+invocation_logs = true  # Log request/response metadata for each invocation
 
 [observability.traces]
 enabled = true
-head_sampling_rate = 1
+head_sampling_rate = 1  # 1 = 100% sampling (adjust for high-traffic: 0.1 = 10%, 0.01 = 1%)
+# Destination names must match your Cloudflare → Sentry integration setup
+# For this project: "sentry-traces" routes to our Sentry instance
+# Other users: Update to match your Sentry integration name or remove to disable external routing
 destinations = ["sentry-traces"]
-persist = true
+persist = true  # Store traces in Cloudflare dashboard for viewing
