@@ -67,10 +67,6 @@ export class RedditDiscoveryService implements DiscoveryService {
     context: DiscoveryContext
   ): Promise<DiscoveredFeed[]> {
     try {
-      // Parse URL to extract protocol and hostname
-      const parsedUrl = new URL(url);
-      const baseUrl = `${parsedUrl.protocol}//${parsedUrl.hostname}`;
-
       // Extract subreddit or user from URL
       // Reddit identifiers can only contain: alphanumeric, underscores, and hyphens
       // Length: 3-21 characters for subreddits, 3-20 for usernames
