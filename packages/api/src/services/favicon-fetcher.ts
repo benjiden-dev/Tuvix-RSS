@@ -45,10 +45,10 @@ export async function discoverFavicon(
         console.log("[discoverFavicon] Feed icon URL (provided):", feedIconUrl);
         console.log("[discoverFavicon] Domain:", domain);
 
-        // Build candidate list - prioritize feedIconUrl when provided
+        // Build candidate list - prioritize feedIconUrl if provided
         const candidates = feedIconUrl
           ? [
-              { url: feedIconUrl, strategy: "feed_metadata" }, // Prioritize feed-provided icon (e.g., iTunes image)
+              { url: feedIconUrl, strategy: "feed_metadata" }, // Prioritize feed-provided icon (e.g., iTunes image, Reddit icon)
               {
                 url: `https://icons.duckduckgo.com/ip3/${domain}.ico`,
                 strategy: "duckduckgo",

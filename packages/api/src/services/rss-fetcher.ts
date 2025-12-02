@@ -26,6 +26,7 @@ import {
 import { chunkArray, D1_MAX_PARAMETERS } from "@/db/utils";
 import { emitCounter, emitGauge, withTiming } from "@/utils/metrics";
 import { extractItunesImage } from "@/utils/feed-utils";
+import { extractCommentLink } from "./comment-link-extraction";
 
 // =============================================================================
 // Types
@@ -725,7 +726,67 @@ async function extractArticleData(
 
   // Sanitize HTML first (allow safe tags like links), then truncate safely
   // Pass alreadySanitized flag to avoid double-sanitization
-  const sanitizedDescription = sanitizeHtml(rawDescription);
+  let sanitizedDescription = sanitizeHtml(rawDescription);
+
+  // Clean up feed-specific patterns
+  // Remove empty <a> tags (Reddit thumbnail wrappers, etc.)
+  sanitizedDescription = sanitizedDescription.replace(
+    /<a[^>]*>\s*<\/a>\s*/gi,
+    ""
+  );
+
+  // Remove "submitted by /u/username" text and links (Reddit)
+  // Handle both with and without spaces around username
+  sanitizedDescription = sanitizedDescription.replace(
+    /submitted by\s*<a[^>]*>\s*\/u\/[^<]+\s*<\/a>\s*/gi,
+    ""
+  );
+  sanitizedDescription = sanitizedDescription.replace(
+    /submitted by\s*\/u\/\S+\s*/gi,
+    ""
+  );
+
+  // Remove "to r/subreddit" links (Reddit)
+  sanitizedDescription = sanitizedDescription.replace(
+    /to\s*<a[^>]*>\s*r\/[^<]+\s*<\/a>\s*/gi,
+    ""
+  );
+
+  // Remove [link] and [comments] links (Reddit - we have proper buttons)
+  sanitizedDescription = sanitizedDescription.replace(
+    /<a[^>]*>\[link\]<\/a>\s*/gi,
+    ""
+  );
+  sanitizedDescription = sanitizedDescription.replace(
+    /<a[^>]*>\[comments\]<\/a>\s*/gi,
+    ""
+  );
+
+  // Remove standalone "Comments" link (Hacker News)
+  // Note: Anchors (^ and $) are intentional - only remove when entire description
+  // is just a "Comments" link. Preserve "Comments" within actual content.
+  sanitizedDescription = sanitizedDescription.replace(
+    /^<a[^>]*>Comments<\/a>$/gi,
+    ""
+  );
+
+  // Clean up extra whitespace and line breaks
+  // Note: Intentionally collapses multiple breaks to improve readability.
+  // Reddit/HN feeds often have excessive spacing that clutters the UI.
+  sanitizedDescription = sanitizedDescription
+    .replace(/(<br\s*\/?\s*>\s*){2,}/gi, "<br>") // Collapse multiple <br> tags
+    .replace(/<br\s*\/?\s*>\s*$/gi, "") // Remove trailing <br>
+    .replace(/^\s*<br\s*\/?\s*>/gi, "") // Remove leading <br>
+    .trim();
+
+  // If description is only whitespace/breaks after cleanup, return empty
+  const contentWithoutBr = sanitizedDescription
+    .replace(/<br\s*\/?\s*>/gi, "")
+    .trim();
+  if (contentWithoutBr.length === 0 || contentWithoutBr === "/>") {
+    sanitizedDescription = "";
+  }
+
   const description = truncateHtml(sanitizedDescription, 5000, "...", {
     alreadySanitized: true,
   });
@@ -833,6 +894,9 @@ async function extractArticleData(
   // Published date
   const publishedAt = extractPublishedDate(item);
 
+  // Comment link
+  const commentLink = extractCommentLink(item);
+
   return {
     sourceId,
     guid,
@@ -843,6 +907,7 @@ async function extractArticleData(
     author,
     imageUrl,
     audioUrl,
+    commentLink,
     publishedAt,
   };
 }
