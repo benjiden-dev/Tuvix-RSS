@@ -26,6 +26,7 @@ import {
 import { chunkArray, D1_MAX_PARAMETERS } from "@/db/utils";
 import { emitCounter, emitGauge, withTiming } from "@/utils/metrics";
 import { extractItunesImage } from "@/utils/feed-utils";
+import { extractCommentLink } from "./comment-link-extraction";
 
 // =============================================================================
 // Types
@@ -833,6 +834,9 @@ async function extractArticleData(
   // Published date
   const publishedAt = extractPublishedDate(item);
 
+  // Comment link
+  const commentLink = extractCommentLink(item);
+
   return {
     sourceId,
     guid,
@@ -843,6 +847,7 @@ async function extractArticleData(
     author,
     imageUrl,
     audioUrl,
+    commentLink,
     publishedAt,
   };
 }

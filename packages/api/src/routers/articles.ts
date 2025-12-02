@@ -45,6 +45,7 @@ function transformArticleRow(row: {
     author: row.articles.author,
     imageUrl: row.articles.imageUrl,
     audioUrl: row.articles.audioUrl,
+    commentLink: row.articles.commentLink,
     publishedAt: row.articles.publishedAt,
     createdAt: row.articles.createdAt,
     read: row.user_article_states?.read ?? false,
