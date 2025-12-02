@@ -150,7 +150,7 @@ export class AppleDiscoveryService implements DiscoveryService {
         return [];
       }
 
-      const data: iTunesSearchResponse = await response.json();
+      const data = (await response.json()) as iTunesSearchResponse;
 
       // Check if we got results
       if (

@@ -252,9 +252,7 @@ export class DiscoveryRegistry {
         // Log error but continue to next service
         console.error(`Discovery service ${serviceName} failed:`, error);
         this.telemetry?.captureException?.(
-          error instanceof Error
-            ? error
-            : new Error(String(error)),
+          error instanceof Error ? error : new Error(String(error)),
           {
             level: "warning",
             tags: {

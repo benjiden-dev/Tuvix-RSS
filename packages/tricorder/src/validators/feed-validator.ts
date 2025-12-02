@@ -22,10 +22,7 @@ export function createFeedValidator(
   seenFeedIds: Set<string>
 ): (feedUrl: string) => Promise<DiscoveredFeed | null> {
   // Track in-flight requests to prevent concurrent validation of the same URL
-  const inFlightRequests = new Map<
-    string,
-    Promise<DiscoveredFeed | null>
-  >();
+  const inFlightRequests = new Map<string, Promise<DiscoveredFeed | null>>();
 
   return async (feedUrl: string): Promise<DiscoveredFeed | null> => {
     try {
