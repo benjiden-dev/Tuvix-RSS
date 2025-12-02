@@ -240,8 +240,7 @@ async function getRedditIcon(feedUrl: string): Promise<string | undefined> {
 
     // Reddit about.json structure:
     // { data: { community_icon, icon_img } }
-    const iconUrl =
-      data?.data?.community_icon || data?.data?.icon_img; // Modern Reddit icon // Legacy Reddit icon
+    const iconUrl = data?.data?.community_icon || data?.data?.icon_img; // Modern Reddit icon // Legacy Reddit icon
 
     if (iconUrl) {
       // Reddit returns icons with URL-encoded query params, decode them
