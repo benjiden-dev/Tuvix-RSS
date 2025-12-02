@@ -59,9 +59,11 @@ describe("createFeedValidator", () => {
 
   describe("basic validation", () => {
     it("should validate and return a valid RSS feed", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        createMockRssResponse("https://example.com/feed", "My Feed")
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(
+          createMockRssResponse("https://example.com/feed", "My Feed")
+        );
       global.fetch = fetchMock as any;
 
       const validator = createFeedValidator(seenUrls, seenFeedIds);
@@ -76,13 +78,15 @@ describe("createFeedValidator", () => {
     });
 
     it("should validate and return a valid Atom feed", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        createMockAtomResponse(
-          "https://example.com/atom",
-          "urn:uuid:test-123",
-          "My Atom Feed"
-        )
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(
+          createMockAtomResponse(
+            "https://example.com/atom",
+            "urn:uuid:test-123",
+            "My Atom Feed"
+          )
+        );
       global.fetch = fetchMock as any;
 
       const validator = createFeedValidator(seenUrls, seenFeedIds);
@@ -120,9 +124,9 @@ describe("createFeedValidator", () => {
     });
 
     it("should set User-Agent header", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        createMockRssResponse("https://example.com/feed")
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(createMockRssResponse("https://example.com/feed"));
       global.fetch = fetchMock as any;
 
       const validator = createFeedValidator(seenUrls, seenFeedIds);
@@ -139,9 +143,9 @@ describe("createFeedValidator", () => {
     });
 
     it("should have 10 second timeout", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        createMockRssResponse("https://example.com/feed")
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(createMockRssResponse("https://example.com/feed"));
       global.fetch = fetchMock as any;
 
       const validator = createFeedValidator(seenUrls, seenFeedIds);
@@ -158,9 +162,9 @@ describe("createFeedValidator", () => {
 
   describe("URL deduplication", () => {
     it("should deduplicate by normalized input URL", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        createMockRssResponse("https://example.com/feed")
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(createMockRssResponse("https://example.com/feed"));
       global.fetch = fetchMock as any;
 
       const validator = createFeedValidator(seenUrls, seenFeedIds);
@@ -373,9 +377,9 @@ describe("createFeedValidator", () => {
 
   describe("persistent deduplication state", () => {
     it("should share seenUrls across validator calls", async () => {
-      const fetchMock = vi.fn().mockResolvedValue(
-        createMockRssResponse("https://example.com/feed")
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(createMockRssResponse("https://example.com/feed"));
       global.fetch = fetchMock as any;
 
       const validator = createFeedValidator(seenUrls, seenFeedIds);
@@ -388,9 +392,11 @@ describe("createFeedValidator", () => {
 
     it("should share seenFeedIds across validator calls", async () => {
       const feedId = "urn:uuid:test-123";
-      const fetchMock = vi.fn().mockResolvedValue(
-        createMockAtomResponse("https://example.com/atom", feedId)
-      );
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValue(
+          createMockAtomResponse("https://example.com/atom", feedId)
+        );
       global.fetch = fetchMock as any;
 
       const validator = createFeedValidator(seenUrls, seenFeedIds);

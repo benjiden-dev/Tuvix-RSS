@@ -48,9 +48,9 @@ describe("normalizeFeedUrl", () => {
 
   describe("tracking parameter removal", () => {
     it("should remove utm_source parameter", () => {
-      expect(normalizeFeedUrl("https://example.com/feed?utm_source=twitter")).toBe(
-        "https://example.com/feed"
-      );
+      expect(
+        normalizeFeedUrl("https://example.com/feed?utm_source=twitter")
+      ).toBe("https://example.com/feed");
     });
 
     it("should remove all UTM parameters", () => {
@@ -60,15 +60,15 @@ describe("normalizeFeedUrl", () => {
     });
 
     it("should remove fbclid parameter", () => {
-      expect(
-        normalizeFeedUrl("https://example.com/feed?fbclid=abc123")
-      ).toBe("https://example.com/feed");
+      expect(normalizeFeedUrl("https://example.com/feed?fbclid=abc123")).toBe(
+        "https://example.com/feed"
+      );
     });
 
     it("should remove gclid parameter", () => {
-      expect(
-        normalizeFeedUrl("https://example.com/feed?gclid=xyz789")
-      ).toBe("https://example.com/feed");
+      expect(normalizeFeedUrl("https://example.com/feed?gclid=xyz789")).toBe(
+        "https://example.com/feed"
+      );
     });
 
     it("should remove ref parameter", () => {
