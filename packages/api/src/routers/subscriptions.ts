@@ -60,6 +60,32 @@ import {
 } from "@/utils/opml-parser";
 import { extractItunesImage } from "@/utils/feed-utils";
 
+/**
+ * Normalize Reddit feed URLs to use old.reddit.com for consistency.
+ * This prevents duplicate subscriptions when users provide different domains
+ * (www.reddit.com, reddit.com, old.reddit.com) that serve the same content.
+ *
+ * @param url - The URL to normalize
+ * @returns Normalized URL with old.reddit.com domain, or original URL if not Reddit
+ */
+function normalizeRedditUrl(url: string): string {
+  try {
+    const parsedUrl = new URL(url);
+    // Check if this is a Reddit domain with an RSS feed
+    if (
+      parsedUrl.hostname.includes("reddit.com") &&
+      parsedUrl.pathname.endsWith(".rss")
+    ) {
+      // Normalize to old.reddit.com (matches RedditDiscoveryService)
+      parsedUrl.hostname = "old.reddit.com";
+      return parsedUrl.toString();
+    }
+  } catch {
+    // Invalid URL, return as-is
+  }
+  return url;
+}
+
 export const subscriptionsRouter = router({
   /**
    * List all user's subscriptions with pagination
@@ -419,10 +445,13 @@ export const subscriptionsRouter = router({
       }
 
       // Step 4: Check if source exists, create if not
+      // Normalize Reddit URLs to prevent duplicates across different domains
+      const normalizedFeedUrl = normalizeRedditUrl(feedUrl);
+
       const existingSources = await ctx.db
         .select()
         .from(schema.sources)
-        .where(eq(schema.sources.url, feedUrl))
+        .where(eq(schema.sources.url, normalizedFeedUrl))
         .limit(1);
 
       let sourceId: number;
@@ -445,11 +474,11 @@ export const subscriptionsRouter = router({
           })
           .where(eq(schema.sources.id, sourceId));
       } else {
-        // Create new source
+        // Create new source with normalized URL
         const newSource = await ctx.db
           .insert(schema.sources)
           .values({
-            url: feedUrl,
+            url: normalizedFeedUrl,
             title: feedTitle,
             description: feedDescription,
             siteUrl,
@@ -1593,10 +1622,13 @@ export const subscriptionsRouter = router({
                 : undefined;
 
           // Check if source exists
+          // Normalize Reddit URLs to prevent duplicates across different domains
+          const normalizedFeedUrl = normalizeRedditUrl(feedInfo.url);
+
           const existingSources = await ctx.db
             .select()
             .from(schema.sources)
-            .where(eq(schema.sources.url, feedInfo.url))
+            .where(eq(schema.sources.url, normalizedFeedUrl))
             .limit(1);
 
           let sourceId: number;
@@ -1616,7 +1648,7 @@ export const subscriptionsRouter = router({
             const newSource = await ctx.db
               .insert(schema.sources)
               .values({
-                url: feedInfo.url,
+                url: normalizedFeedUrl,
                 title: feedTitle,
                 description: feedDescription,
                 siteUrl,
