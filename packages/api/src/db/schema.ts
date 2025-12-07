@@ -21,29 +21,36 @@ import { sql } from "drizzle-orm";
 // ============================================================================
 // These tables are required by Better Auth library
 
-export const user = sqliteTable("user", {
-  id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: integer("email_verified", { mode: "boolean" })
-    .default(false)
-    .notNull(),
-  image: text("image"),
-  createdAt: integer("created_at", { mode: "timestamp_ms" })
-    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-    .notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-    .$onUpdate(() => new Date())
-    .notNull(),
-  username: text("username").unique(),
-  displayUsername: text("display_username"),
-  role: text("role"),
-  plan: text("plan").default("free"), // User plan (Better Auth additionalFields)
-  banned: integer("banned", { mode: "boolean" }).default(false),
-  banReason: text("ban_reason"),
-  banExpires: integer("ban_expires", { mode: "timestamp_ms" }),
-});
+export const user = sqliteTable(
+  "user",
+  {
+    id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
+    name: text("name").notNull(),
+    email: text("email").notNull().unique(),
+    emailVerified: integer("email_verified", { mode: "boolean" })
+      .default(false)
+      .notNull(),
+    image: text("image"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => new Date())
+      .notNull(),
+    username: text("username").unique(),
+    displayUsername: text("display_username"),
+    role: text("role"),
+    plan: text("plan").default("free"), // User plan (Better Auth additionalFields)
+    banned: integer("banned", { mode: "boolean" }).default(false),
+    banReason: text("ban_reason"),
+    banExpires: integer("ban_expires", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    index("idx_user_plan").on(table.plan),
+    index("idx_user_created_at").on(table.createdAt),
+  ]
+);
 
 export const session = sqliteTable("session", {
   id: integer("id", { mode: "number" }).primaryKey({ autoIncrement: true }),
@@ -136,6 +143,7 @@ export const sources = sqliteTable(
   (table) => [
     index("idx_sources_url").on(table.url),
     index("idx_sources_icon_url").on(table.iconUrl),
+    index("idx_sources_last_fetched").on(table.lastFetched),
   ]
 );
 
@@ -172,6 +180,9 @@ export const subscriptions = sqliteTable(
   (table) => [
     index("idx_subscriptions_user_id").on(table.userId),
     index("idx_subscriptions_source_id").on(table.sourceId),
+    // Composite indexes for common query patterns
+    index("idx_subscriptions_user_source").on(table.userId, table.sourceId),
+    index("idx_subscriptions_user_created").on(table.userId, table.createdAt),
   ]
 );
 
@@ -235,6 +246,11 @@ export const articles = sqliteTable(
     index("idx_articles_published_at").on(table.publishedAt),
     index("idx_articles_guid").on(table.guid),
     index("idx_articles_audio_url").on(table.audioUrl),
+    // Composite index for feed generation (source + chronological order)
+    index("idx_articles_source_published").on(
+      table.sourceId,
+      table.publishedAt
+    ),
     unique().on(table.sourceId, table.guid),
   ]
 );
@@ -295,6 +311,7 @@ export const categories = sqliteTable(
   },
   (table) => [
     index("idx_categories_user_id").on(table.userId),
+    index("idx_categories_name").on(table.name),
     uniqueIndex("idx_categories_user_id_name_normalized").on(
       table.userId,
       sql`LOWER(${table.name})`
@@ -350,6 +367,7 @@ export const feeds = sqliteTable(
   (table) => [
     index("idx_feeds_user_id").on(table.userId),
     index("idx_feeds_slug").on(table.slug),
+    index("idx_feeds_created_at").on(table.createdAt),
     unique().on(table.userId, table.slug),
   ]
 );
