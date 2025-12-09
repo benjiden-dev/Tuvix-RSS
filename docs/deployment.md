@@ -161,7 +161,39 @@ CORS_ORIGIN=http://localhost:5173
 DATABASE_PATH=/app/data/tuvix.db
 PORT=3001
 NODE_ENV=production
+BASE_URL=http://localhost:5173  # Frontend URL for Better Auth callbacks
 ```
+
+**Admin User Setup:**
+
+TuvixRSS supports two methods for creating an admin user:
+
+**Option 1: Admin Bootstrap on Startup (RECOMMENDED - Secure)**
+Provide admin credentials to create an admin user automatically when the container starts:
+
+```env
+ADMIN_USERNAME=admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=your-secure-password-here
+```
+
+**Note:** All three `ADMIN_*` variables must be set for bootstrap to work. If an admin already exists, these will be ignored.
+
+**Option 2: First User Auto-Promotion**
+
+```env
+ALLOW_FIRST_USER_ADMIN=true
+```
+
+If enabled, the **first person to register** becomes admin. This is convenient for quick setup.
+
+**Timing consideration:** If your deployment is publicly accessible, ensure you register first before others discover the instance. For internet-exposed production deployments, Option 1 (bootstrap) is more deterministic.
+
+**Recommended for:**
+
+- Local development/testing
+- Private networks or VPN-only access
+- Deployments where you control registration access
 
 #### 2. Build and Run
 
@@ -248,6 +280,20 @@ CORS_ORIGIN=https://feed.example.com  # Frontend URL (or multiple origins comma-
 DATABASE_PATH=/app/data/tuvix.db
 PORT=3001
 NODE_ENV=production
+BASE_URL=https://feed.example.com  # Frontend URL for Better Auth callbacks
+
+# Admin Setup (choose one option)
+# Option 1: Bootstrap admin on startup (recommended for production)
+ADMIN_USERNAME=admin
+ADMIN_EMAIL=admin@example.com
+ADMIN_PASSWORD=<secure-password>
+
+# Option 2: First user auto-promotion (convenient for dev/testing)
+# ALLOW_FIRST_USER_ADMIN=true
+
+# Optional: Email service (for verification emails, password resets)
+# RESEND_API_KEY=re_xxxxxxxxx
+# EMAIL_FROM=noreply@yourdomain.com
 
 # Optional: Customize fetch behavior
 FETCH_INTERVAL_MINUTES=60  # How often to fetch RSS feeds
@@ -587,9 +633,10 @@ cd packages/api
 npx wrangler secret put BETTER_AUTH_SECRET
 # Generate with: openssl rand -base64 32
 
-# First user auto-promotion to admin (REQUIRED for first deployment)
+# First user auto-promotion to admin (optional - enabled by default if not set)
+# Only set this secret if you want to explicitly control the behavior
 npx wrangler secret put ALLOW_FIRST_USER_ADMIN
-# Enter: true
+# Enter: true (to enable, default) or false (to disable)
 
 # CORS origin (frontend URL) - Set BEFORE deploying API
 npx wrangler secret put CORS_ORIGIN
@@ -683,7 +730,7 @@ See [GitHub Issue #969](https://github.com/better-auth/better-auth/issues/969) f
 **Prerequisites:**
 
 1. ✅ Cloudflare Workers Paid plan active ($5/month)
-2. ✅ `ALLOW_FIRST_USER_ADMIN` secret set to `"true"` (Step 3)
+2. ✅ `ALLOW_FIRST_USER_ADMIN` enabled (enabled by default, or set secret to `"true"` in Step 3)
 3. ✅ Email service configured (optional but recommended)
 4. ✅ CPU limits configured in `wrangler.toml` (already set to 30 seconds)
 
@@ -1057,10 +1104,18 @@ curl -X POST https://api.example.com/_admin/init
 
 #### Docker-Only Variables
 
-| Variable        | Required | Default         | Description             |
-| --------------- | -------- | --------------- | ----------------------- |
-| `DATABASE_PATH` | No       | ./data/tuvix.db | Path to SQLite database |
-| `PORT`          | No       | 3001            | API server port         |
+| Variable                 | Required | Default         | Description                                                                                                                                                 |
+| ------------------------ | -------- | --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_PATH`          | No       | ./data/tuvix.db | Path to SQLite database                                                                                                                                     |
+| `PORT`                   | No       | 3001            | API server port                                                                                                                                             |
+| `BASE_URL`               | No       | -               | Frontend URL for Better Auth callbacks (e.g., http://localhost:5173)                                                                                        |
+| `ADMIN_USERNAME`         | No       | -               | Admin username for bootstrap (requires ADMIN_EMAIL and ADMIN_PASSWORD) - **Recommended for production**                                                     |
+| `ADMIN_EMAIL`            | No       | -               | Admin email for bootstrap (requires ADMIN_USERNAME and ADMIN_PASSWORD) - **Recommended for production**                                                     |
+| `ADMIN_PASSWORD`         | No       | -               | Admin password for bootstrap (requires ADMIN_USERNAME and ADMIN_EMAIL) - **Recommended for production**                                                     |
+| `ALLOW_FIRST_USER_ADMIN` | No       | false           | Enable first user auto-promotion to admin. Convenient for dev/testing. For public production deployments, bootstrap (ADMIN\_\* vars) is more deterministic. |
+| `RESEND_API_KEY`         | No       | -               | Resend API key for email service                                                                                                                            |
+| `EMAIL_FROM`             | No       | -               | Email sender address (must match verified domain in Resend)                                                                                                 |
+| `COOKIE_DOMAIN`          | No       | -               | Root domain for cross-subdomain cookies (e.g., "example.com")                                                                                               |
 
 #### Cloudflare-Only Variables
 
@@ -1079,7 +1134,7 @@ curl -X POST https://api.example.com/_admin/init
 | Secret                   | Required | Description                                                                                                  |
 | ------------------------ | -------- | ------------------------------------------------------------------------------------------------------------ |
 | `BETTER_AUTH_SECRET`     | Yes      | Secret for Better Auth session management (min 32 chars)                                                     |
-| `ALLOW_FIRST_USER_ADMIN` | Yes      | Enable first user auto-promotion to admin (set to `"true"`)                                                  |
+| `ALLOW_FIRST_USER_ADMIN` | No       | Enable first user auto-promotion to admin (defaults to enabled, set to `"false"` to disable)                 |
 | `CORS_ORIGIN`            | Yes      | Allowed CORS origins (comma-separated)                                                                       |
 | `BASE_URL`               | Yes      | Base URL for Better Auth (production API URL, NOT localhost). Used for callback URLs and session management. |
 | `RESEND_API_KEY`         | No       | Resend API key for email service (see [Email System Guide](developer/email-system.md))                       |
