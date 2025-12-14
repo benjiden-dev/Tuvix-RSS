@@ -35,8 +35,8 @@ describe("User Limits Service", () => {
   beforeEach(async () => {
     db = createTestDb();
     // Note: Plans are seeded by migrations (free, pro, enterprise)
-    // free: maxSources=100, maxPublicFeeds=2, maxCategories=50
-    // pro: maxSources=500, maxPublicFeeds=25, maxCategories=100
+    // free: maxSources=500, maxPublicFeeds=2, maxCategories=200
+    // pro: maxSources=2000, maxPublicFeeds=25, maxCategories=500
   });
 
   afterEach(() => {
@@ -49,9 +49,9 @@ describe("User Limits Service", () => {
 
       const limits = await getUserLimits(db, user.id);
 
-      expect(limits.maxSources).toBe(100); // From migration
+      expect(limits.maxSources).toBe(500); // From migration
       expect(limits.maxPublicFeeds).toBe(2);
-      expect(limits.maxCategories).toBe(50);
+      expect(limits.maxCategories).toBe(200);
     });
 
     it("should return different limits for different plans", async () => {
@@ -69,8 +69,8 @@ describe("User Limits Service", () => {
       const freeLimits = await getUserLimits(db, freeUser.id);
       const proLimits = await getUserLimits(db, proUser.id);
 
-      expect(freeLimits.maxSources).toBe(100); // From migration
-      expect(proLimits.maxSources).toBe(500); // From migration
+      expect(freeLimits.maxSources).toBe(500); // From migration
+      expect(proLimits.maxSources).toBe(2000); // From migration
     });
 
     it("should return null for unlimited categories", async () => {
@@ -135,9 +135,9 @@ describe("User Limits Service", () => {
       const result = await checkSourceLimit(db, user.id);
 
       expect(result.allowed).toBe(true);
-      expect(result.limit).toBe(100); // From migration
+      expect(result.limit).toBe(500); // From migration
       expect(result.current).toBe(0);
-      expect(result.remaining).toBe(100);
+      expect(result.remaining).toBe(500);
     });
 
     it("should deny when at limit", async () => {
@@ -146,14 +146,14 @@ describe("User Limits Service", () => {
       // Update usage to be at limit
       await db
         .update(schema.usageStats)
-        .set({ sourceCount: 100 })
+        .set({ sourceCount: 500 })
         .where(eq(schema.usageStats.userId, user.id));
 
       const result = await checkSourceLimit(db, user.id);
 
       expect(result.allowed).toBe(false);
-      expect(result.limit).toBe(100); // From migration
-      expect(result.current).toBe(100);
+      expect(result.limit).toBe(500); // From migration
+      expect(result.current).toBe(500);
       expect(result.remaining).toBe(0);
     });
 
@@ -162,7 +162,7 @@ describe("User Limits Service", () => {
 
       await db
         .update(schema.usageStats)
-        .set({ sourceCount: 101 })
+        .set({ sourceCount: 501 })
         .where(eq(schema.usageStats.userId, user.id));
 
       const result = await checkSourceLimit(db, user.id);
@@ -204,8 +204,8 @@ describe("User Limits Service", () => {
       const result = await checkCategoryLimit(db, user.id);
 
       expect(result.allowed).toBe(true);
-      expect(result.limit).toBe(50); // From migration
-      expect(result.remaining).toBe(50);
+      expect(result.limit).toBe(200); // From migration
+      expect(result.remaining).toBe(200);
     });
 
     it("should always allow for unlimited plans", async () => {
@@ -231,7 +231,7 @@ describe("User Limits Service", () => {
 
       const result = await checkLimit(db, user.id, "sources");
 
-      expect(result.limit).toBe(100); // From migration
+      expect(result.limit).toBe(500); // From migration
     });
 
     it("should delegate to checkPublicFeedLimit", async () => {
@@ -247,7 +247,7 @@ describe("User Limits Service", () => {
 
       const result = await checkLimit(db, user.id, "categories");
 
-      expect(result.limit).toBe(50);
+      expect(result.limit).toBe(200);
     });
   });
 
